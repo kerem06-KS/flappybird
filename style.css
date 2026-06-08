@@ -1,0 +1,56 @@
+:root {
+  --bg: #70c5ce;
+  --pipe: #2d9b2b;
+  --bird: #ffeb3b;
+  --ground: #dcae5d;
+  --text: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, system-ui, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #80d1df 0%, #5cb5d6 100%);
+  color: var(--text);
+}
+
+.game-shell {
+  text-align: center;
+  width: 100%;
+  max-width: 520px;
+  padding: 16px;
+}
+
+h1 {
+  margin: 0 0 16px;
+  font-size: 2rem;
+}
+
+canvas {
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.18);
+  background: #8ad7ee;
+}
+
+.hud {
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 1rem;
+}
+
+#message {
+  flex: 1;
+  text-align: right;
+  opacity: 0.9;
+}
