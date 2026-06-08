@@ -7,15 +7,101 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="game-shell">
-    <h1>Flappy Bird</h1>
-    <canvas id="gameCanvas" width="480" height="640"></canvas>
-    <div class="hud">
-      <span id="score">Score: 0</span>
-      <span id="message">Press Space or Click to Start</span>
+  <!-- Homescreen -->
+  <div id="homescreen" class="screen active">
+    <canvas id="homeCanvas" width="480" height="640"></canvas>
+    <div class="home-content">
+      <div class="title-container">
+        <h1 class="game-title">Flappy Bird</h1>
+        <p class="tagline">Can you fly through the pipes?</p>
+      </div>
+      <div class="button-container">
+        <button id="playBtn" class="btn btn-primary">🎮 Play</button>
+        <button id="settingsBtn" class="btn btn-secondary">⚙️ Settings</button>
+      </div>
     </div>
   </div>
 
+  <!-- Game Screen -->
+  <div id="gamescreen" class="screen">
+    <div class="game-shell">
+      <div class="game-header">
+        <button id="homeBtn" class="home-nav-btn">← Home</button>
+        <h1>Flappy Bird</h1>
+        <div style="width: 50px;"></div>
+      </div>
+      <canvas id="gameCanvas" width="480" height="640"></canvas>
+      <div class="hud">
+        <span id="score">Score: 0</span>
+        <span id="difficulty">Difficulty: Normal</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-content settings-modal">
+      <h2>Settings</h2>
+      
+      <div class="settings-section">
+        <h3>Difficulty</h3>
+        <div class="difficulty-options">
+          <label class="radio-option">
+            <input type="radio" name="difficulty" value="easy" />
+            <span>Easy</span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="difficulty" value="normal" checked />
+            <span>Normal</span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="difficulty" value="hard" />
+            <span>Hard</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Bird Color</h3>
+        <div class="color-options">
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="yellow" checked />
+            <span class="color-swatch yellow"></span>
+            <span>Yellow</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="red" />
+            <span class="color-swatch red"></span>
+            <span>Red</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="blue" />
+            <span class="color-swatch blue"></span>
+            <span>Blue</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="green" />
+            <span class="color-swatch green"></span>
+            <span>Green</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="purple" />
+            <span class="color-swatch purple"></span>
+            <span>Purple</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="pink" />
+            <span class="color-swatch pink"></span>
+            <span>Pink</span>
+          </label>
+        </div>
+      </div>
+
+      <button id="closeSettingsBtn" class="btn btn-primary">Done</button>
+    </div>
+  </div>
+
+  <!-- Game Over Modal -->
   <div id="gameOverModal" class="modal hidden">
     <div class="modal-content">
       <h2>Game Over!</h2>
@@ -23,8 +109,9 @@
         <p class="score-label">Final Score</p>
         <p id="finalScore" class="score-number">0</p>
       </div>
-      <button id="restartBtn" class="restart-btn">Play Again</button>
-      <p class="restart-hint">or press <strong>SPACE</strong></p>
+      <button id="restartBtn" class="btn btn-primary">Play Again</button>
+      <button id="homeFromGameBtn" class="btn btn-secondary">Home</button>
+      <p class="restart-hint">or press <strong>SPACE</strong> to play again</p>
     </div>
   </div>
 
