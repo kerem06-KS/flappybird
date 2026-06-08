@@ -15,6 +15,21 @@
       <span id="message">Press Space or Click to Start</span>
     </div>
   </div>
+
+  <div id="gameOverModal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Game Over!</h2>
+      <div class="score-display">
+        <p class="score-label">Final Score</p>
+        <p id="finalScore" class="score-number">0</p>
+      </div>
+      <button id="restartBtn" class="restart-btn">Play Again</button>
+      <p class="restart-hint">or press <strong>SPACE</strong></p>
+    </div>
+  </div>
+
+  <div id="modalOverlay" class="modal-overlay hidden"></div>
+
   <script src="script.js"></script>
 </body>
 </html>
