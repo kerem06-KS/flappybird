@@ -4,6 +4,15 @@
   --bird: #ffeb3b;
   --ground: #dcae5d;
   --text: #ffffff;
+  --theme: 'day';
+}
+
+:root[data-theme="night"] {
+  --bg: #1a1f3a;
+  --pipe: #1a3a2a;
+  --bird: #ffd700;
+  --ground: #3a3a4a;
+  --text: #ffffff;
 }
 
 * {
@@ -202,9 +211,10 @@ body {
 .hud {
   margin-top: 12px;
   display: flex;
-  justify-content: space-between;
+  justify-content: space-around;
   gap: 12px;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  flex-wrap: wrap;
 }
 
 /* Modal Styles */
@@ -275,7 +285,7 @@ body {
   background: rgba(0, 0, 0, 0.2);
   padding: 25px;
   border-radius: 15px;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
   border: 2px solid rgba(255, 235, 59, 0.3);
 }
 
@@ -293,6 +303,30 @@ body {
   font-weight: bold;
   color: #ffeb3b;
   text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.highscore-display {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 20px;
+  border-radius: 15px;
+  margin-bottom: 20px;
+  border: 2px solid rgba(107, 207, 127, 0.3);
+}
+
+.highscore-label {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: #bdc3c7;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.highscore-number {
+  margin: 0;
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: #6bcf7f;
+  text-shadow: 2px 2px 6px rgba(0, 0, 0, 0.5);
 }
 
 .restart-hint {
@@ -393,6 +427,7 @@ body {
   border-radius: 50%;
   border: 3px solid rgba(255, 255, 255, 0.3);
   transition: transform 0.3s ease;
+  position: relative;
 }
 
 .color-option:hover .color-swatch {
@@ -423,6 +458,67 @@ body {
   background: #ff69b4;
 }
 
+/* Striped pattern swatches */
+.color-swatch.yellow-stripe {
+  background: repeating-linear-gradient(
+    45deg,
+    #ffeb3b,
+    #ffeb3b 5px,
+    #fdd835 5px,
+    #fdd835 10px
+  );
+}
+
+.color-swatch.red-stripe {
+  background: repeating-linear-gradient(
+    45deg,
+    #ff6b6b,
+    #ff6b6b 5px,
+    #ff5252 5px,
+    #ff5252 10px
+  );
+}
+
+.color-swatch.blue-stripe {
+  background: repeating-linear-gradient(
+    45deg,
+    #4d96ff,
+    #4d96ff 5px,
+    #2979f0 5px,
+    #2979f0 10px
+  );
+}
+
+.color-swatch.green-stripe {
+  background: repeating-linear-gradient(
+    45deg,
+    #6bcf7f,
+    #6bcf7f 5px,
+    #43a047 5px,
+    #43a047 10px
+  );
+}
+
+.color-swatch.purple-stripe {
+  background: repeating-linear-gradient(
+    45deg,
+    #b469d4,
+    #b469d4 5px,
+    #9c27b0 5px,
+    #9c27b0 10px
+  );
+}
+
+.color-swatch.pink-stripe {
+  background: repeating-linear-gradient(
+    45deg,
+    #ff69b4,
+    #ff69b4 5px,
+    #ec407a 5px,
+    #ec407a 10px
+  );
+}
+
 .color-option span:last-child {
   color: #fff;
   font-size: 0.95rem;
@@ -432,4 +528,71 @@ body {
 .settings-modal .btn {
   width: 100%;
   margin-top: 20px;
+}
+
+/* New Highscore Message */
+.new-highscore-message {
+  background: linear-gradient(135deg, #ffeb3b, #ff6b6b);
+  color: #1a1f3a;
+  padding: 20px;
+  border-radius: 15px;
+  margin: 20px 0;
+  font-size: 1.5rem;
+  font-weight: bold;
+  animation: pulse 0.6s ease-in-out infinite, bounce 0.5s ease-in-out;
+  text-shadow: 2px 2px 4px rgba(255, 255, 255, 0.3);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes bounce {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.new-highscore-message.hidden {
+  display: none;
+}
+
+/* Confetti styles */
+.confetti {
+  position: fixed;
+  z-index: 991;
+  pointer-events: none;
+}
+
+/* More bird patterns */
+.color-swatch.dots {
+  background: radial-gradient(circle, #ffeb3b 20%, transparent 20%),
+              radial-gradient(circle, #fdd835 20%, transparent 20%);
+  background-size: 10px 10px;
+  background-position: 0 0, 5px 5px;
+}
+
+.color-swatch.gradient {
+  background: linear-gradient(135deg, #ffeb3b 0%, #ff9800 100%);
+}
+
+.color-swatch.checkerboard {
+  background: linear-gradient(45deg, #ffeb3b 25%, transparent 25%),
+              linear-gradient(-45deg, #ffeb3b 25%, transparent 25%),
+              linear-gradient(45deg, transparent 75%, #ffeb3b 75%),
+              linear-gradient(-45deg, transparent 75%, #ffeb3b 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+  background-color: #fdd835;
 }

@@ -32,6 +32,7 @@
       </div>
       <canvas id="gameCanvas" width="480" height="640"></canvas>
       <div class="hud">
+        <span id="highscore">High Score: 0</span>
         <span id="score">Score: 0</span>
         <span id="difficulty">Difficulty: Normal</span>
       </div>
@@ -62,37 +63,81 @@
       </div>
 
       <div class="settings-section">
-        <h3>Bird Color</h3>
+        <h3>Theme</h3>
+        <div class="difficulty-options">
+          <label class="radio-option">
+            <input type="radio" name="theme" value="day" checked />
+            <span>☀️ Day Mode</span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="theme" value="night" />
+            <span>🌙 Night Mode</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Bird Color & Pattern</h3>
         <div class="color-options">
           <label class="color-option">
-            <input type="radio" name="birdColor" value="yellow" checked />
+            <input type="radio" name="birdColor" value="yellow-solid" checked />
             <span class="color-swatch yellow"></span>
             <span>Yellow</span>
           </label>
           <label class="color-option">
-            <input type="radio" name="birdColor" value="red" />
+            <input type="radio" name="birdColor" value="yellow-stripe" />
+            <span class="color-swatch yellow-stripe"></span>
+            <span>Yellow Stripe</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="red-solid" />
             <span class="color-swatch red"></span>
             <span>Red</span>
           </label>
           <label class="color-option">
-            <input type="radio" name="birdColor" value="blue" />
+            <input type="radio" name="birdColor" value="red-stripe" />
+            <span class="color-swatch red-stripe"></span>
+            <span>Red Stripe</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="blue-solid" />
             <span class="color-swatch blue"></span>
             <span>Blue</span>
           </label>
           <label class="color-option">
-            <input type="radio" name="birdColor" value="green" />
+            <input type="radio" name="birdColor" value="blue-stripe" />
+            <span class="color-swatch blue-stripe"></span>
+            <span>Blue Stripe</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="green-solid" />
             <span class="color-swatch green"></span>
             <span>Green</span>
           </label>
           <label class="color-option">
-            <input type="radio" name="birdColor" value="purple" />
+            <input type="radio" name="birdColor" value="green-stripe" />
+            <span class="color-swatch green-stripe"></span>
+            <span>Green Stripe</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="purple-solid" />
             <span class="color-swatch purple"></span>
             <span>Purple</span>
           </label>
           <label class="color-option">
-            <input type="radio" name="birdColor" value="pink" />
+            <input type="radio" name="birdColor" value="purple-stripe" />
+            <span class="color-swatch purple-stripe"></span>
+            <span>Purple Stripe</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="pink-solid" />
             <span class="color-swatch pink"></span>
             <span>Pink</span>
+          </label>
+          <label class="color-option">
+            <input type="radio" name="birdColor" value="pink-stripe" />
+            <span class="color-swatch pink-stripe"></span>
+            <span>Pink Stripe</span>
           </label>
         </div>
       </div>
@@ -103,11 +148,19 @@
 
   <!-- Game Over Modal -->
   <div id="gameOverModal" class="modal hidden">
+    <canvas id="confettiCanvas" style="position: fixed; top: 0; left: 0; z-index: 990; display: none;"></canvas>
     <div class="modal-content">
-      <h2>Game Over!</h2>
+      <h2 id="gameOverTitle">Game Over!</h2>
+      <div id="newHighscoreMessage" class="new-highscore-message hidden">
+        🎉 NEW HIGHSCORE! 🎉
+      </div>
       <div class="score-display">
         <p class="score-label">Final Score</p>
         <p id="finalScore" class="score-number">0</p>
+      </div>
+      <div class="highscore-display">
+        <p class="highscore-label">High Score</p>
+        <p id="gameOverHighScore" class="highscore-number">0</p>
       </div>
       <button id="restartBtn" class="btn btn-primary">Play Again</button>
       <button id="homeFromGameBtn" class="btn btn-secondary">Home</button>

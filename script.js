@@ -1,532 +1,759 @@
-// DOM Elements
-const homescreen = document.getElementById('homescreen');
-const gamescreen = document.getElementById('gamescreen');
+// Canvas and Context
+const gameCanvas = document.getElementById('gameCanvas');
+const gameCtx = gameCanvas.getContext('2d');
 const homeCanvas = document.getElementById('homeCanvas');
 const homeCtx = homeCanvas.getContext('2d');
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-const scoreLabel = document.getElementById('score');
-const difficultyLabel = document.getElementById('difficulty');
-const playBtn = document.getElementById('playBtn');
-const settingsBtn = document.getElementById('settingsBtn');
-const homeBtn = document.getElementById('homeBtn');
-const settingsModal = document.getElementById('settingsModal');
-const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-const gameOverModal = document.getElementById('gameOverModal');
-const modalOverlay = document.getElementById('modalOverlay');
-const finalScoreDisplay = document.getElementById('finalScore');
-const restartBtn = document.getElementById('restartBtn');
-const homeFromGameBtn = document.getElementById('homeFromGameBtn');
-
-// Game Constants
-const width = canvas.width;
-const height = canvas.height;
-const homeCanvasWidth = homeCanvas.width;
-const homeCanvasHeight = homeCanvas.height;
-
-// Game Settings
-let gameSettings = {
-  difficulty: 'normal',
-  birdColor: 'yellow'
-};
-
-// Difficulty configurations
-const difficultySettings = {
-  easy: {
-    gravity: 0.35,
-    jumpStrength: -9,
-    pipeGap: 220,
-    pipeDistance: 280,
-    pipeSpeed: 3
-  },
-  normal: {
-    gravity: 0.45,
-    jumpStrength: -9.5,
-    pipeGap: 180,
-    pipeDistance: 260,
-    pipeSpeed: 3.8
-  },
-  hard: {
-    gravity: 0.55,
-    jumpStrength: -10,
-    pipeGap: 150,
-    pipeDistance: 240,
-    pipeSpeed: 4.5
-  }
-};
-
-// Bird color configurations
-const birdColors = {
-  yellow: { main: '#ffeb3b', secondary: '#fdd835', accent: '#ff9800' },
-  red: { main: '#ff6b6b', secondary: '#ff5252', accent: '#ff1744' },
-  blue: { main: '#4d96ff', secondary: '#2979f0', accent: '#1565c0' },
-  green: { main: '#6bcf7f', secondary: '#43a047', accent: '#2e7d32' },
-  purple: { main: '#b469d4', secondary: '#9c27b0', accent: '#6a1b9a' },
-  pink: { main: '#ff69b4', secondary: '#ec407a', accent: '#c2185b' }
-};
+const confettiCanvas = document.getElementById('confettiCanvas');
+const confettiCtx = confettiCanvas.getContext('2d');
 
 // Game Variables
-let bird;
-let pipes;
-let score;
-let frameCount;
-let running = false;
-let gameOver = false;
+let gameState = 'home'; // home, playing, gameOver
+let birdX = 60;
+let birdY = 300;
+let birdWidth = 36;
+let birdHeight = 36;
+let velocity = 0;
+let gravity = 0.45;
+let flapPower = -9.5;
+let pipeSpacing = 180; // gap between top and bottom pipe
+let pipeDistance = 260; // distance between pipes
+let pipeWidth = 80;
+let gameSpeed = 5;
+let score = 0;
+let pipes = [];
+let frameCount = 0;
 let wingAngle = 0;
-let gravity = difficultySettings.normal.gravity;
-let jumpStrength = difficultySettings.normal.jumpStrength;
-let pipeGap = difficultySettings.normal.pipeGap;
-let pipeDistance = difficultySettings.normal.pipeDistance;
-let pipeSpeed = difficultySettings.normal.pipeSpeed;
 
-const groundHeight = 80;
-const pipeWidth = 80;
+// Game Settings with theme and per-difficulty scores
+const gameSettings = {
+  difficulty: 'normal',
+  theme: 'day',
+  birdColor: 'yellow-solid'
+};
 
-// Parallax Background Variables
-let cloudOffset = 0;
-let mountainOffset = 0;
+const difficultySettings = {
+  easy: { gravity: 0.4, speed: 3, pipeDistance: 280 },
+  normal: { gravity: 0.45, speed: 5, pipeDistance: 260 },
+  hard: { gravity: 0.6, speed: 7, pipeDistance: 240 }
+};
 
-// ===== Homescreen Functions =====
-function drawHomescreen() {
+// Per-difficulty highscores
+const getHighScore = (difficulty) => {
+  return parseInt(localStorage.getItem(`flappyBirdHighscore_${difficulty}`) || '0');
+};
+
+const setHighScore = (difficulty, score) => {
+  localStorage.setItem(`flappyBirdHighscore_${difficulty}`, score);
+};
+
+// Confetti Particle System
+class ConfettiParticle {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 8;
+    this.vy = Math.random() * -8 - 4;
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotationSpeed = (Math.random() - 0.5) * 0.2;
+    this.size = Math.random() * 6 + 4;
+    this.life = 1;
+    this.decay = Math.random() * 0.015 + 0.015;
+    this.color = ['#ff6b6b', '#4ecdc4', '#ffe66d', '#95e1d3', '#f38181'][Math.floor(Math.random() * 5)];
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.3; // gravity
+    this.rotation += this.rotationSpeed;
+    this.life -= this.decay;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.globalAlpha = this.life;
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.fillStyle = this.color;
+    ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
+    ctx.restore();
+  }
+}
+
+let confettiParticles = [];
+
+const createConfetti = () => {
+  const centerX = gameCanvas.width / 2;
+  const centerY = gameCanvas.height / 3;
+  for (let i = 0; i < 50; i++) {
+    confettiParticles.push(new ConfettiParticle(centerX, centerY));
+  }
+};
+
+const updateConfetti = () => {
+  confettiParticles = confettiParticles.filter(p => p.life > 0);
+  confettiParticles.forEach(p => p.update());
+};
+
+const drawConfetti = () => {
+  confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+  confettiParticles.forEach(p => p.draw(confettiCtx));
+};
+
+// Theme System
+const initTheme = () => {
+  const savedTheme = localStorage.getItem('flappyBirdTheme') || 'day';
+  gameSettings.theme = savedTheme;
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  document.querySelector(`input[name="theme"][value="${savedTheme}"]`).checked = true;
+};
+
+const setTheme = (theme) => {
+  gameSettings.theme = theme;
+  localStorage.setItem('flappyBirdTheme', theme);
+  document.documentElement.setAttribute('data-theme', theme);
+};
+
+// Load and Save Settings
+const loadSettings = () => {
+  const saved = localStorage.getItem('flappyBirdSettings');
+  if (saved) {
+    const settings = JSON.parse(saved);
+    gameSettings.difficulty = settings.difficulty || 'normal';
+    gameSettings.birdColor = settings.birdColor || 'yellow-solid';
+  }
+  
+  // Load theme
+  initTheme();
+  
+  // Update UI
+  document.querySelector(`input[name="difficulty"][value="${gameSettings.difficulty}"]`).checked = true;
+  document.querySelector(`input[name="birdColor"][value="${gameSettings.birdColor}"]`).checked = true;
+};
+
+const saveSettings = () => {
+  localStorage.setItem('flappyBirdSettings', JSON.stringify({
+    difficulty: gameSettings.difficulty,
+    birdColor: gameSettings.birdColor
+  }));
+};
+
+// City Background Drawing
+const drawCityBackground = () => {
   // Sky gradient
-  const gradient = homeCtx.createLinearGradient(0, 0, 0, homeCanvasHeight);
-  gradient.addColorStop(0, '#87ceeb');
-  gradient.addColorStop(1, '#e0f6ff');
-  homeCtx.fillStyle = gradient;
-  homeCtx.fillRect(0, 0, homeCanvasWidth, homeCanvasHeight);
-
-  // Draw clouds (parallax)
-  cloudOffset = (cloudOffset + 0.3) % homeCanvasWidth;
-  drawClouds(cloudOffset);
-  drawClouds(cloudOffset - homeCanvasWidth);
-
-  // Draw mountains
-  drawMountains();
-
-  // Draw birds flying across screen
-  drawFlyingBirds(frameCount);
-}
-
-function drawClouds(offset) {
-  homeCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-  
-  // Cloud 1
-  drawCloud(offset + 80, 80, 50);
-  
-  // Cloud 2
-  drawCloud(offset + 250, 120, 40);
-  
-  // Cloud 3
-  drawCloud(offset + 420, 150, 60);
-}
-
-function drawCloud(x, y, size) {
-  homeCtx.beginPath();
-  homeCtx.arc(x, y, size * 0.6, 0, Math.PI * 2);
-  homeCtx.arc(x + size * 0.5, y - size * 0.2, size * 0.7, 0, Math.PI * 2);
-  homeCtx.arc(x + size, y, size * 0.6, 0, Math.PI * 2);
-  homeCtx.fill();
-}
-
-function drawMountains() {
-  homeCtx.fillStyle = '#7cb342';
-  homeCtx.beginPath();
-  homeCtx.moveTo(0, homeCanvasHeight * 0.6);
-  homeCtx.lineTo(100, homeCanvasHeight * 0.35);
-  homeCtx.lineTo(200, homeCanvasHeight * 0.6);
-  homeCtx.fill();
-
-  homeCtx.fillStyle = '#558b2f';
-  homeCtx.beginPath();
-  homeCtx.moveTo(180, homeCanvasHeight * 0.6);
-  homeCtx.lineTo(280, homeCanvasHeight * 0.3);
-  homeCtx.lineTo(380, homeCanvasHeight * 0.6);
-  homeCtx.fill();
-
-  homeCtx.fillStyle = '#7cb342';
-  homeCtx.beginPath();
-  homeCtx.moveTo(350, homeCanvasHeight * 0.6);
-  homeCtx.lineTo(450, homeCanvasHeight * 0.4);
-  homeCtx.lineTo(550, homeCanvasHeight * 0.6);
-  homeCtx.fill();
-
-  // Ground
-  homeCtx.fillStyle = '#9ccc65';
-  homeCtx.fillRect(0, homeCanvasHeight * 0.6, homeCanvasWidth, homeCanvasHeight * 0.4);
-
-  // Ground pattern
-  homeCtx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
-  homeCtx.lineWidth = 2;
-  for (let i = 0; i < homeCanvasWidth; i += 60) {
-    homeCtx.beginPath();
-    homeCtx.moveTo(i, homeCanvasHeight * 0.6);
-    homeCtx.lineTo(i + 30, homeCanvasHeight * 0.6 + 20);
-    homeCtx.stroke();
+  const gradient = gameCtx.createLinearGradient(0, 0, 0, gameCanvas.height);
+  if (gameSettings.theme === 'night') {
+    gradient.addColorStop(0, '#1a1f3a');
+    gradient.addColorStop(1, '#2d2e4a');
+  } else {
+    gradient.addColorStop(0, '#70c5ce');
+    gradient.addColorStop(1, '#90d5e0');
   }
-}
+  gameCtx.fillStyle = gradient;
+  gameCtx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
 
-function drawFlyingBirds(frame) {
-  const colors = Object.values(birdColors);
+  // Draw buildings (static, behind game elements)
+  const buildingWidth = 70;
+  const buildingSpacing = 90;
+  const maxBuildingHeight = 200;
   
-  for (let i = 0; i < 3; i++) {
-    const x = ((frame * 1.5 + i * 150) % (homeCanvasWidth + 100)) - 50;
-    const y = 200 + Math.sin(frame * 0.02 + i) * 40;
-    const color = colors[i];
+  for (let i = 0; i < (gameCanvas.width / buildingSpacing) + 2; i++) {
+    const x = i * buildingSpacing - 30;
+    const height = 100 + Math.sin(i * 0.7) * 60;
+    const y = gameCanvas.height - height - 80;
     
-    homeCtx.save();
-    homeCtx.translate(x, y);
+    // Building shadow (for depth)
+    if (gameSettings.theme === 'night') {
+      gameCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    } else {
+      gameCtx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    }
+    gameCtx.fillRect(x + 2, y + 2, buildingWidth, height);
     
-    // Body
-    homeCtx.fillStyle = color.main;
-    homeCtx.beginPath();
-    homeCtx.ellipse(0, 0, 15, 12, 0, 0, Math.PI * 2);
-    homeCtx.fill();
+    // Building body
+    if (gameSettings.theme === 'night') {
+      gameCtx.fillStyle = '#0f1419';
+    } else {
+      gameCtx.fillStyle = '#9a9aaa';
+    }
+    gameCtx.fillRect(x, y, buildingWidth, height);
     
-    // Wing
-    const wingFlap = Math.sin(frame * 0.1) * 0.3;
-    homeCtx.fillStyle = color.secondary;
-    homeCtx.save();
-    homeCtx.rotate(wingFlap);
-    homeCtx.beginPath();
-    homeCtx.ellipse(-6, 0, 10, 6, 0, 0, Math.PI * 2);
-    homeCtx.fill();
-    homeCtx.restore();
+    // Building outline
+    gameCtx.strokeStyle = gameSettings.theme === 'night' ? '#333' : '#7a7a8a';
+    gameCtx.lineWidth = 2;
+    gameCtx.strokeRect(x, y, buildingWidth, height);
+
+    // Windows
+    const windowSize = 6;
+    const windowSpacing = 12;
+    const windowPadding = 6;
     
-    // Eye
-    homeCtx.fillStyle = '#fff';
-    homeCtx.beginPath();
-    homeCtx.arc(4, -4, 3, 0, Math.PI * 2);
-    homeCtx.fill();
-    
-    homeCtx.fillStyle = '#000';
-    homeCtx.beginPath();
-    homeCtx.arc(5, -4, 1.5, 0, Math.PI * 2);
-    homeCtx.fill();
-    
-    homeCtx.restore();
+    for (let row = 0; row < Math.floor((height - windowPadding * 2) / windowSpacing); row++) {
+      for (let col = 0; col < 2; col++) {
+        const wx = x + windowPadding + col * (buildingWidth / 2 - windowPadding);
+        const wy = y + windowPadding + row * windowSpacing;
+        
+        if (gameSettings.theme === 'night' && Math.random() > 0.4) {
+          gameCtx.fillStyle = '#ffeb3b';
+          gameCtx.fillRect(wx, wy, windowSize, windowSize);
+          // Light glow
+          gameCtx.shadowColor = 'rgba(255, 235, 59, 0.5)';
+          gameCtx.shadowBlur = 3;
+        } else {
+          gameCtx.fillStyle = gameSettings.theme === 'night' ? '#1a1f3a' : '#d0d0d0';
+          gameCtx.fillRect(wx, wy, windowSize, windowSize);
+        }
+      }
+    }
   }
-}
+  
+  gameCtx.shadowColor = 'transparent';
+};
 
-// ===== Game Functions =====
-function resetGame() {
-  // Apply difficulty settings
-  const settings = difficultySettings[gameSettings.difficulty];
-  gravity = settings.gravity;
-  jumpStrength = settings.jumpStrength;
-  pipeGap = settings.pipeGap;
-  pipeDistance = settings.pipeDistance;
-  pipeSpeed = settings.pipeSpeed;
+// Draw Bird with Patterns
+const drawBirdWithPattern = () => {
+  gameCtx.save();
+  gameCtx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
+  
+  // Rotation based on velocity
+  const angle = Math.min(velocity * 0.08, 0.5);
+  gameCtx.rotate(angle);
+  gameCtx.translate(-birdWidth / 2, -birdHeight / 2);
 
-  bird = {
-    x: width * 0.22,
-    y: height * 0.4,
-    radius: 18,
-    velocity: 0,
-    rotation: 0,
+  const [color, pattern] = gameSettings.birdColor.split('-');
+  const colors = {
+    yellow: '#ffeb3b',
+    red: '#ff5252',
+    blue: '#2196f3',
+    green: '#4caf50',
+    purple: '#9c27b0',
+    pink: '#ff1493'
   };
 
-  pipes = [];
-  score = 0;
-  frameCount = 0;
-  running = true;
-  gameOver = false;
-  scoreLabel.textContent = 'Score: 0';
-  difficultyLabel.textContent = `Difficulty: ${gameSettings.difficulty.charAt(0).toUpperCase() + gameSettings.difficulty.slice(1)}`;
-  hideGameOverModal();
-}
+  const baseColor = colors[color] || colors.yellow;
 
-function createPipe() {
-  const topHeight = Math.random() * (height - pipeGap - groundHeight - 120) + 60;
-  pipes.push({ x: width, top: topHeight, passed: false });
-}
-
-function flap() {
-  if (!running) {
-    resetGame();
-  }
-
-  if (gameOver) {
-    resetGame();
-    return;
-  }
-
-  bird.velocity = jumpStrength;
-}
-
-function drawBird() {
-  const birdColorSet = birdColors[gameSettings.birdColor];
-  
-  ctx.save();
-  ctx.translate(bird.x, bird.y);
-  ctx.rotate(bird.rotation);
-
-  // Body
-  ctx.fillStyle = birdColorSet.main;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, bird.radius, bird.radius * 0.85, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // Body (main oval)
+  gameCtx.fillStyle = baseColor;
+  gameCtx.beginPath();
+  gameCtx.ellipse(birdWidth / 2, birdHeight / 2, birdWidth / 2.2, birdHeight / 2.4, 0, 0, Math.PI * 2);
+  gameCtx.fill();
 
   // Wing animation
   wingAngle = Math.sin(frameCount * 0.1) * 0.3;
   
   // Left Wing
-  ctx.fillStyle = birdColorSet.secondary;
-  ctx.save();
-  ctx.rotate(wingAngle);
-  ctx.beginPath();
-  ctx.ellipse(-8, -2, 12, 8, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  const leftWingColor = pattern === 'stripe' ? 'rgba(0, 0, 0, 0.2)' : color === 'yellow' ? '#fdd835' : 'rgba(255, 255, 255, 0.3)';
+  gameCtx.fillStyle = leftWingColor;
+  gameCtx.save();
+  gameCtx.translate(birdWidth / 2 - 8, birdHeight / 2 - 2);
+  gameCtx.rotate(wingAngle);
+  gameCtx.beginPath();
+  gameCtx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.restore();
 
   // Right Wing
-  ctx.save();
-  ctx.rotate(-wingAngle);
-  ctx.beginPath();
-  ctx.ellipse(8, -2, 12, 8, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  gameCtx.save();
+  gameCtx.translate(birdWidth / 2 + 8, birdHeight / 2 - 2);
+  gameCtx.rotate(-wingAngle);
+  gameCtx.beginPath();
+  gameCtx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.restore();
 
-  // Chest
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-  ctx.beginPath();
-  ctx.ellipse(0, 2, bird.radius * 0.6, bird.radius * 0.5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // Chest/Breast (lighter shade)
+  gameCtx.fillStyle = color === 'yellow' ? '#ffee58' : 'rgba(255, 255, 255, 0.2)';
+  gameCtx.beginPath();
+  gameCtx.ellipse(birdWidth / 2, birdHeight / 2 + 3, birdWidth / 2.8, birdHeight / 2.8, 0, 0, Math.PI * 2);
+  gameCtx.fill();
 
   // Eyes
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(4, -6, 5, 0, Math.PI * 2);
-  ctx.fill();
+  // Left eye white
+  gameCtx.fillStyle = '#ffffff';
+  gameCtx.beginPath();
+  gameCtx.arc(birdWidth / 2 + 4, birdHeight / 2 - 6, 5, 0, Math.PI * 2);
+  gameCtx.fill();
 
-  ctx.fillStyle = '#000000';
+  // Pupil (looking forward with slight animation)
+  gameCtx.fillStyle = '#000000';
   const pupilOffset = Math.sin(frameCount * 0.05) * 1;
-  ctx.beginPath();
-  ctx.arc(4 + pupilOffset, -6, 3, 0, Math.PI * 2);
-  ctx.fill();
+  gameCtx.beginPath();
+  gameCtx.arc(birdWidth / 2 + 4 + pupilOffset, birdHeight / 2 - 6, 3, 0, Math.PI * 2);
+  gameCtx.fill();
 
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(5 + pupilOffset, -7, 1.2, 0, Math.PI * 2);
-  ctx.fill();
+  // Eye shine
+  gameCtx.fillStyle = '#ffffff';
+  gameCtx.beginPath();
+  gameCtx.arc(birdWidth / 2 + 5 + pupilOffset, birdHeight / 2 - 7, 1.2, 0, Math.PI * 2);
+  gameCtx.fill();
 
   // Beak
-  ctx.fillStyle = birdColorSet.accent;
-  ctx.beginPath();
-  ctx.moveTo(8, -1);
-  ctx.lineTo(14, -1);
-  ctx.lineTo(12, 1);
-  ctx.closePath();
-  ctx.fill();
+  gameCtx.fillStyle = '#ff9800';
+  gameCtx.beginPath();
+  gameCtx.moveTo(birdWidth / 2 + 8, birdHeight / 2 - 1);
+  gameCtx.lineTo(birdWidth / 2 + 14, birdHeight / 2 - 1);
+  gameCtx.lineTo(birdWidth / 2 + 12, birdHeight / 2 + 1);
+  gameCtx.closePath();
+  gameCtx.fill();
 
   // Tail feathers
-  ctx.strokeStyle = birdColorSet.secondary;
-  ctx.lineWidth = 2;
-  ctx.lineCap = 'round';
+  gameCtx.strokeStyle = color === 'yellow' ? '#fbc02d' : 'rgba(0, 0, 0, 0.2)';
+  gameCtx.lineWidth = 2;
+  gameCtx.lineCap = 'round';
   
-  ctx.beginPath();
-  ctx.moveTo(-12, 8);
-  ctx.quadraticCurveTo(-18, 10, -20, 14);
-  ctx.stroke();
+  // Tail feather 1
+  gameCtx.beginPath();
+  gameCtx.moveTo(birdWidth / 2 - 12, birdHeight / 2 + 8);
+  gameCtx.quadraticCurveTo(birdWidth / 2 - 18, birdHeight / 2 + 10, birdWidth / 2 - 20, birdHeight / 2 + 14);
+  gameCtx.stroke();
 
-  ctx.beginPath();
-  ctx.moveTo(-13, 12);
-  ctx.quadraticCurveTo(-19, 15, -21, 20);
-  ctx.stroke();
+  // Tail feather 2
+  gameCtx.beginPath();
+  gameCtx.moveTo(birdWidth / 2 - 13, birdHeight / 2 + 12);
+  gameCtx.quadraticCurveTo(birdWidth / 2 - 19, birdHeight / 2 + 15, birdWidth / 2 - 21, birdHeight / 2 + 20);
+  gameCtx.stroke();
 
-  ctx.restore();
-}
+  gameCtx.restore();
+};
 
-function drawPipes() {
-  ctx.fillStyle = '#2d9b2b';
-  pipes.forEach(pipe => {
-    ctx.fillRect(pipe.x, 0, pipeWidth, pipe.top);
-    ctx.fillRect(pipe.x, pipe.top + pipeGap, pipeWidth, height - pipe.top - pipeGap - groundHeight);
-    
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.fillRect(pipe.x + 2, 5, pipeWidth - 4, 10);
-    ctx.fillRect(pipe.x + 2, pipe.top + pipeGap + 5, pipeWidth - 4, 10);
-    
-    ctx.fillStyle = '#2d9b2b';
-  });
-}
-
-function drawGround() {
-  ctx.fillStyle = '#dcae5d';
-  ctx.fillRect(0, height - groundHeight, width, groundHeight);
+// Draw Owl (for night mode)
+const drawOwl = () => {
+  gameCtx.save();
+  gameCtx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
   
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
-  ctx.lineWidth = 2;
-  for (let i = 0; i < width; i += 40) {
-    ctx.beginPath();
-    ctx.moveTo(i, height - groundHeight);
-    ctx.lineTo(i + 20, height - groundHeight + 10);
-    ctx.stroke();
-  }
-}
+  const angle = Math.min(velocity * 0.08, 0.5);
+  gameCtx.rotate(angle);
+  gameCtx.translate(-birdWidth / 2, -birdHeight / 2);
 
-function detectCollision(pipe) {
-  const birdLeft = bird.x - bird.radius;
-  const birdRight = bird.x + bird.radius;
-  const birdTop = bird.y - bird.radius;
-  const birdBottom = bird.y + bird.radius;
+  const [color] = gameSettings.birdColor.split('-');
+  const colors = {
+    yellow: '#c4a000',
+    red: '#8b0000',
+    blue: '#001f3f',
+    green: '#2d5016',
+    purple: '#4a0e4e',
+    pink: '#8b1a3a'
+  };
+  const baseColor = colors[color] || colors.yellow;
 
-  if (birdBottom >= height - groundHeight) return true;
-  if (birdTop <= 0) return true;
+  // Body
+  gameCtx.fillStyle = baseColor;
+  gameCtx.beginPath();
+  gameCtx.ellipse(birdWidth / 2, birdHeight / 2 + 2, birdWidth / 2.2, birdHeight / 2.2, 0, 0, Math.PI * 2);
+  gameCtx.fill();
 
-  const pipeRight = pipe.x + pipeWidth;
-  const pipeBottomTop = pipe.top;
-  const pipeTopBottom = pipe.top + pipeGap;
+  // Wing flap
+  gameCtx.fillStyle = baseColor;
+  gameCtx.save();
+  gameCtx.translate(birdWidth / 2 - 8, birdHeight / 2 + 1);
+  gameCtx.rotate(wingAngle);
+  gameCtx.beginPath();
+  gameCtx.ellipse(0, 0, 10, 10, 0.2, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.restore();
 
-  if (birdRight > pipe.x && birdLeft < pipeRight) {
-    if (birdTop < pipeBottomTop || birdBottom > pipeTopBottom) {
-      return true;
-    }
-  }
+  gameCtx.save();
+  gameCtx.translate(birdWidth / 2 + 8, birdHeight / 2 + 1);
+  gameCtx.rotate(-wingAngle);
+  gameCtx.beginPath();
+  gameCtx.ellipse(0, 0, 10, 10, -0.2, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.restore();
 
-  return false;
-}
+  // Head
+  gameCtx.fillStyle = baseColor;
+  gameCtx.beginPath();
+  gameCtx.arc(birdWidth / 2, birdHeight / 2 - 4, 9, 0, Math.PI * 2);
+  gameCtx.fill();
 
-function update() {
-  if (!running) return;
+  // Ear tufts
+  gameCtx.beginPath();
+  gameCtx.ellipse(birdWidth / 2 - 7, birdHeight / 2 - 12, 3, 7, -0.3, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.beginPath();
+  gameCtx.ellipse(birdWidth / 2 + 7, birdHeight / 2 - 12, 3, 7, 0.3, 0, Math.PI * 2);
+  gameCtx.fill();
 
-  bird.velocity += gravity;
-  bird.y += bird.velocity;
-  bird.rotation = Math.min(Math.max(bird.velocity * 0.04, -0.5), 0.9);
+  // Left eye
+  gameCtx.fillStyle = '#ffd700';
+  gameCtx.beginPath();
+  gameCtx.arc(birdWidth / 2 - 4, birdHeight / 2 - 6, 5, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.fillStyle = '#000';
+  gameCtx.beginPath();
+  gameCtx.arc(birdWidth / 2 - 4, birdHeight / 2 - 6, 2.5, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.fillStyle = '#fff';
+  gameCtx.beginPath();
+  gameCtx.arc(birdWidth / 2 - 3, birdHeight / 2 - 7, 1.2, 0, Math.PI * 2);
+  gameCtx.fill();
 
-  if (frameCount % 100 === 0) {
-    createPipe();
-  }
+  // Right eye
+  gameCtx.fillStyle = '#ffd700';
+  gameCtx.beginPath();
+  gameCtx.arc(birdWidth / 2 + 4, birdHeight / 2 - 6, 5, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.fillStyle = '#000';
+  gameCtx.beginPath();
+  gameCtx.arc(birdWidth / 2 + 4, birdHeight / 2 - 6, 2.5, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.fillStyle = '#fff';
+  gameCtx.beginPath();
+  gameCtx.arc(birdWidth / 2 + 5, birdHeight / 2 - 7, 1.2, 0, Math.PI * 2);
+  gameCtx.fill();
 
+  // Beak
+  gameCtx.fillStyle = '#ff8c00';
+  gameCtx.beginPath();
+  gameCtx.moveTo(birdWidth / 2, birdHeight / 2 - 1);
+  gameCtx.lineTo(birdWidth / 2 + 4, birdHeight / 2 + 1);
+  gameCtx.lineTo(birdWidth / 2, birdHeight / 2 + 3);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  gameCtx.restore();
+};
+
+// Draw Pipes
+const drawPipes = () => {
+  gameCtx.fillStyle = '#2d9b2b';
   pipes.forEach(pipe => {
-    pipe.x -= pipeSpeed;
+    // Top pipe
+    gameCtx.fillRect(pipe.x, 0, pipeWidth, pipe.topHeight);
+    
+    // Top pipe shine
+    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    gameCtx.fillRect(pipe.x + 2, 5, pipeWidth - 4, 10);
+    
+    // Bottom pipe
+    gameCtx.fillStyle = '#2d9b2b';
+    gameCtx.fillRect(pipe.x, pipe.bottomY, pipeWidth, gameCanvas.height - pipe.bottomY - 80);
+    
+    // Bottom pipe shine
+    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    gameCtx.fillRect(pipe.x + 2, pipe.bottomY + 5, pipeWidth - 4, 10);
+  });
+};
 
-    if (!pipe.passed && pipe.x + pipeWidth < bird.x) {
-      pipe.passed = true;
-      score += 1;
-      scoreLabel.textContent = `Score: ${score}`;
+// Draw Ground
+const drawGround = () => {
+  gameCtx.fillStyle = '#dcae5d';
+  gameCtx.fillRect(0, gameCanvas.height - 80, gameCanvas.width, 80);
+
+  // Ground pattern
+  gameCtx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+  gameCtx.lineWidth = 2;
+  for (let i = 0; i < gameCanvas.width; i += 40) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(i, gameCanvas.height - 80);
+    gameCtx.lineTo(i + 20, gameCanvas.height - 60);
+    gameCtx.stroke();
+  }
+};
+
+// Initialize Game
+const initGame = () => {
+  const settings = difficultySettings[gameSettings.difficulty];
+  gravity = settings.gravity;
+  gameSpeed = settings.speed;
+  pipeDistance = settings.pipeDistance;
+  
+  birdX = 60;
+  birdY = 300;
+  velocity = 0;
+  score = 0;
+  frameCount = 0;
+  pipes = [];
+  confettiParticles = [];
+  
+  // Set canvas sizes for confetti
+  confettiCanvas.width = gameCanvas.width;
+  confettiCanvas.height = gameCanvas.height;
+};
+
+// Update Game State
+const updateGame = () => {
+  if (gameState !== 'playing') return;
+
+  frameCount++;
+  velocity += gravity;
+  birdY += velocity;
+
+  // Generate pipes
+  if (pipes.length === 0 || pipes[pipes.length - 1].x < gameCanvas.width - pipeDistance) {
+    const minHeight = 60;
+    const maxHeight = gameCanvas.height - pipeSpacing - 120;
+    const topHeight = Math.random() * (maxHeight - minHeight) + minHeight;
+    pipes.push({
+      x: gameCanvas.width,
+      topHeight: topHeight,
+      bottomY: topHeight + pipeSpacing,
+      scored: false
+    });
+  }
+
+  // Move pipes
+  pipes = pipes.filter(pipe => {
+    pipe.x -= gameSpeed;
+    
+    // Scoring
+    if (!pipe.scored && pipe.x + pipeWidth < birdX) {
+      pipe.scored = true;
+      score++;
+    }
+    
+    return pipe.x + pipeWidth > 0;
+  });
+
+  // Collision detection
+  pipes.forEach(pipe => {
+    if (
+      birdX < pipe.x + pipeWidth &&
+      birdX + birdWidth > pipe.x &&
+      (birdY < pipe.topHeight || birdY + birdHeight > pipe.bottomY)
+    ) {
+      endGame();
     }
   });
 
-  if (pipes.length && pipes[0].x + pipeWidth < 0) {
-    pipes.shift();
+  // Ground collision
+  if (birdY + birdHeight >= gameCanvas.height - 80) {
+    endGame();
   }
 
-  if (pipes.some(detectCollision) || bird.y + bird.radius >= height - groundHeight) {
-    running = false;
-    gameOver = true;
-    showGameOverModal();
+  // Ceiling collision
+  if (birdY < 0) {
+    endGame();
   }
+};
 
-  frameCount += 1;
-}
-
-function draw() {
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#70c5ce';
-  ctx.fillRect(0, 0, width, height);
-
+// Draw Game
+const drawGame = () => {
+  drawCityBackground();
   drawPipes();
   drawGround();
-  drawBird();
-}
-
-function gameLoop() {
-  if (gamescreen.classList.contains('active')) {
-    update();
-    draw();
+  
+  if (gameSettings.theme === 'night') {
+    drawOwl();
   } else {
-    homeCtx.clearRect(0, 0, homeCanvasWidth, homeCanvasHeight);
-    drawHomescreen();
+    drawBirdWithPattern();
   }
+
+  // HUD
+  gameCtx.fillStyle = '#fff';
+  gameCtx.font = 'bold 24px Arial';
+  gameCtx.fillText(`Score: ${score}`, 20, 40);
+};
+
+// Game Over
+const endGame = () => {
+  gameState = 'gameOver';
+  const currentHighScore = getHighScore(gameSettings.difficulty);
+  const isNewHighScore = score > currentHighScore;
+  
+  if (isNewHighScore) {
+    setHighScore(gameSettings.difficulty, score);
+    createConfetti();
+  }
+
+  showGameOverModal(isNewHighScore);
+};
+
+// Show Game Over Modal
+const showGameOverModal = (isNewHighScore) => {
+  const finalScore = score;
+  const currentHighScore = getHighScore(gameSettings.difficulty);
+  
+  document.getElementById('finalScore').textContent = finalScore;
+  document.getElementById('gameOverHighScore').textContent = currentHighScore;
+  
+  const newHighscoreMsg = document.getElementById('newHighscoreMessage');
+  if (isNewHighScore) {
+    newHighscoreMsg.classList.remove('hidden');
+  } else {
+    newHighscoreMsg.classList.add('hidden');
+  }
+
+  document.getElementById('gameOverModal').classList.remove('hidden');
+  document.getElementById('modalOverlay').classList.remove('hidden');
+  
+  if (isNewHighScore) {
+    confettiCanvas.style.display = 'block';
+  }
+};
+
+// Hide Game Over Modal
+const hideGameOverModal = () => {
+  document.getElementById('gameOverModal').classList.add('hidden');
+  document.getElementById('modalOverlay').classList.add('hidden');
+  confettiCanvas.style.display = 'none';
+};
+
+// Draw Home Screen
+const drawHomescreen = () => {
+  const gradient = homeCtx.createLinearGradient(0, 0, 0, homeCanvas.height);
+  gradient.addColorStop(0, '#87ceeb');
+  gradient.addColorStop(1, '#e0f6ff');
+  homeCtx.fillStyle = gradient;
+  homeCtx.fillRect(0, 0, homeCanvas.width, homeCanvas.height);
+
+  // Draw simple city on homescreen
+  const buildingWidth = 50;
+  const spacing = 70;
+  for (let i = 0; i < homeCanvas.width / spacing + 1; i++) {
+    const x = i * spacing;
+    const height = 100 + (Math.sin(i * 0.5) * 50);
+    const y = homeCanvas.height - height - 100;
+    
+    homeCtx.fillStyle = '#8b8b9a';
+    homeCtx.fillRect(x, y, buildingWidth, height);
+    homeCtx.strokeStyle = '#666';
+    homeCtx.lineWidth = 2;
+    homeCtx.strokeRect(x, y, buildingWidth, height);
+
+    // Windows
+    for (let row = 0; row < Math.floor(height / 14) - 1; row++) {
+      for (let col = 0; col < 2; col++) {
+        homeCtx.fillStyle = '#d0d0d0';
+        homeCtx.fillRect(x + 8 + col * 14, y + 12 + row * 14, 8, 8);
+      }
+    }
+  }
+
+  // Ground
+  homeCtx.fillStyle = '#dcae5d';
+  homeCtx.fillRect(0, homeCanvas.height - 100, homeCanvas.width, 100);
+};
+
+// Animation Loop
+const gameLoop = () => {
+  if (gameState === 'playing') {
+    updateGame();
+    drawGame();
+  }
+
+  if (confettiParticles.length > 0) {
+    updateConfetti();
+    drawConfetti();
+  }
+
   requestAnimationFrame(gameLoop);
-}
+};
 
-function showGameOverModal() {
-  finalScoreDisplay.textContent = score;
-  gameOverModal.classList.remove('hidden');
-  modalOverlay.classList.remove('hidden');
-}
+// Show Settings Modal
+const showSettingsModal = () => {
+  document.getElementById('settingsModal').classList.remove('hidden');
+  document.getElementById('modalOverlay').classList.remove('hidden');
+};
 
-function hideGameOverModal() {
-  gameOverModal.classList.add('hidden');
-  modalOverlay.classList.add('hidden');
-}
+// Hide Settings Modal
+const hideSettingsModal = () => {
+  document.getElementById('settingsModal').classList.add('hidden');
+  document.getElementById('modalOverlay').classList.add('hidden');
+};
 
-function switchToGame() {
-  homescreen.classList.remove('active');
-  gamescreen.classList.add('active');
-  resetGame();
-}
+// Show Home Screen
+const showHomescreen = () => {
+  gameState = 'home';
+  document.getElementById('homescreen').classList.add('active');
+  document.getElementById('gamescreen').classList.remove('active');
+  drawHomescreen();
+};
 
-function switchToHome() {
-  gamescreen.classList.remove('active');
-  homescreen.classList.add('active');
-  running = false;
-  gameOver = false;
-}
+// Show Game Screen
+const showGamescreen = () => {
+  document.getElementById('homescreen').classList.remove('active');
+  document.getElementById('gamescreen').classList.add('active');
+  gameState = 'playing';
+  initGame();
+};
 
-function showSettings() {
-  settingsModal.classList.remove('hidden');
-  modalOverlay.classList.remove('hidden');
-  
-  // Load current settings
-  document.querySelector(`input[name="difficulty"][value="${gameSettings.difficulty}"]`).checked = true;
-  document.querySelector(`input[name="birdColor"][value="${gameSettings.birdColor}"]`).checked = true;
-}
+// Update HUD
+const updateHUD = () => {
+  document.getElementById('difficulty').textContent = `Difficulty: ${gameSettings.difficulty.charAt(0).toUpperCase() + gameSettings.difficulty.slice(1)}`;
+  document.getElementById('highscore').textContent = `High Score: ${getHighScore(gameSettings.difficulty)}`;
+};
 
-function hideSettings() {
-  // Save settings
-  gameSettings.difficulty = document.querySelector('input[name="difficulty"]:checked').value;
-  gameSettings.birdColor = document.querySelector('input[name="birdColor"]:checked').value;
-  
-  settingsModal.classList.add('hidden');
-  modalOverlay.classList.add('hidden');
-}
-
-// ===== Event Listeners =====
-playBtn.addEventListener('click', switchToGame);
-settingsBtn.addEventListener('click', showSettings);
-closeSettingsBtn.addEventListener('click', hideSettings);
-homeBtn.addEventListener('click', switchToHome);
-homeFromGameBtn.addEventListener('click', switchToHome);
-
-restartBtn.addEventListener('click', () => {
-  hideGameOverModal();
-  resetGame();
+// Event Listeners
+document.getElementById('playBtn').addEventListener('click', () => {
+  showGamescreen();
 });
 
-window.addEventListener('keydown', event => {
-  if (event.code === 'Space' || event.code === 'ArrowUp') {
-    event.preventDefault();
-    if (gameOver && gamescreen.classList.contains('active')) {
-      flap();
-    } else if (running) {
-      flap();
+document.getElementById('settingsBtn').addEventListener('click', () => {
+  showSettingsModal();
+});
+
+document.getElementById('closeSettingsBtn').addEventListener('click', () => {
+  saveSettings();
+  updateHUD();
+  hideSettingsModal();
+  drawHomescreen();
+});
+
+document.getElementById('restartBtn').addEventListener('click', () => {
+  hideGameOverModal();
+  showGamescreen();
+});
+
+document.getElementById('homeFromGameBtn').addEventListener('click', () => {
+  hideGameOverModal();
+  showHomescreen();
+});
+
+document.getElementById('homeBtn').addEventListener('click', () => {
+  gameState = 'home';
+  showHomescreen();
+});
+
+// Settings Form Changes
+document.querySelectorAll('input[name="difficulty"]').forEach(input => {
+  input.addEventListener('change', (e) => {
+    gameSettings.difficulty = e.target.value;
+    updateHUD();
+  });
+});
+
+document.querySelectorAll('input[name="theme"]').forEach(input => {
+  input.addEventListener('change', (e) => {
+    setTheme(e.target.value);
+    drawHomescreen();
+  });
+});
+
+document.querySelectorAll('input[name="birdColor"]').forEach(input => {
+  input.addEventListener('change', (e) => {
+    gameSettings.birdColor = e.target.value;
+  });
+});
+
+// Keyboard Controls
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (gameState === 'playing') {
+      velocity = flapPower;
+    } else if (gameState === 'gameOver') {
+      hideGameOverModal();
+      showGamescreen();
     }
   }
 });
 
-canvas.addEventListener('mousedown', () => {
-  if (gamescreen.classList.contains('active')) {
-    flap();
+// Click on canvas for flap
+gameCanvas.addEventListener('click', () => {
+  if (gameState === 'playing') {
+    velocity = flapPower;
   }
 });
 
-canvas.addEventListener('touchstart', event => {
-  event.preventDefault();
-  if (gamescreen.classList.contains('active')) {
-    flap();
+homeCanvas.addEventListener('click', () => {
+  if (gameState === 'home') {
+    showSettingsModal();
   }
 });
 
-modalOverlay.addEventListener('click', () => {
-  if (!settingsModal.classList.contains('hidden')) {
-    hideSettings();
-  } else if (gameOver && gamescreen.classList.contains('active')) {
-    flap();
-  }
-});
-
-// Initialize game loop
-frameCount = 0;
+// Initialize
+loadSettings();
+updateHUD();
+drawHomescreen();
 gameLoop();
