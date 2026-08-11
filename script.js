@@ -425,108 +425,273 @@ const drawCityBackground = () => {
   gameCtx.shadowBlur = 0;
 };
 
+// ---------------------------------------------------------------------------
+// Bird and owl models
+//
+// Both are drawn as layered vector art in a 36x36 local box: tail and far wing
+// behind the body, then body, belly, head, face, beak, and the near wing on top.
+// That back-to-front order is what gives them volume instead of reading as a
+// stack of circles.
+// ---------------------------------------------------------------------------
+
+// Every shade is derived from a single base hue per colour option.
+const BIRD_BASES = {
+  yellow: '#ffce1f',
+  red:    '#ef4b4b',
+  blue:   '#3d9be9',
+  green:  '#4fb050',
+  purple: '#a259cc',
+  pink:   '#ff5f9e'
+};
+
+const birdPalette = (name) => {
+  const base = BIRD_BASES[name] || BIRD_BASES.yellow;
+  return {
+    base,
+    light:   mixHex(base, '#ffffff', 0.36),
+    lighter: mixHex(base, '#ffffff', 0.64),
+    dark:    mixHex(base, '#000000', 0.26),
+    darker:  mixHex(base, '#000000', 0.46)
+  };
+};
+
+// Wing beat. Climbing birds beat faster, so the rate tracks vertical speed.
+const wingBeat = () => {
+  const rate = 0.18 + Math.max(0, -velocity) * 0.02;
+  return Math.sin(frameCount * rate);
+};
+
+// A single feather: a leaf shape tapering to a point, drawn pointing left from
+// the origin then rotated into place. Filled shapes read as feathers; thin
+// stroked slivers just look like straw.
+const primaryFeather = (angle, len, wid) => {
+  gameCtx.save();
+  gameCtx.rotate(angle);
+  gameCtx.beginPath();
+  gameCtx.moveTo(1, 0);
+  gameCtx.quadraticCurveTo(-len * 0.55, -wid, -len, -wid * 0.15);
+  gameCtx.quadraticCurveTo(-len * 0.5, wid * 0.95, 1, wid * 0.5);
+  gameCtx.closePath();
+  gameCtx.fill();
+  gameCtx.restore();
+};
+
+// Songbird wing: a fan of primaries under a rounded covert.
+const drawBirdWing = (p, beat, near) => {
+  gameCtx.save();
+  // Sits mid-body: any higher and the feathers appear to sprout from the neck.
+  gameCtx.translate(15, 18);
+  gameCtx.rotate(beat * (near ? 0.55 : 0.4));
+  if (!near) gameCtx.scale(0.88, 0.88);
+
+  // Primaries fanned back and down
+  gameCtx.fillStyle = near ? p.dark : p.darker;
+  primaryFeather(0.08, 16, 3.4);
+  primaryFeather(0.42, 15, 3.6);
+  primaryFeather(0.78, 13, 3.4);
+
+  // Secondaries, slightly lighter, closer in
+  gameCtx.fillStyle = near ? p.base : p.dark;
+  primaryFeather(0.30, 10, 4.2);
+
+  // Covert: rounded shoulder cap over the feather roots. Kept a shade darker
+  // than the body so the wing reads as a separate layer rather than blending in
+  // and leaving the primaries looking detached.
+  gameCtx.fillStyle = near ? p.dark : p.darker;
+  gameCtx.beginPath();
+  gameCtx.ellipse(-3, 2, 8, 5.6, 0.28, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // Covert highlight
+  gameCtx.fillStyle = near ? p.base : p.dark;
+  gameCtx.beginPath();
+  gameCtx.ellipse(-2.5, 0.8, 5.6, 3.6, 0.28, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  gameCtx.restore();
+};
+
+// Owl wing: broader and blunter than the songbird's, with feather barring.
+const drawOwlWing = (p, beat, near) => {
+  gameCtx.save();
+  // Set low and outboard so the wing never covers the facial disc or beak.
+  gameCtx.translate(9, 22);
+  gameCtx.rotate(beat * (near ? 0.42 : 0.32));
+  if (!near) gameCtx.scale(0.9, 0.9);
+
+  // Broad, blunt primaries
+  gameCtx.fillStyle = near ? p.dark : p.darker;
+  primaryFeather(-0.10, 13, 4.6);
+  primaryFeather(0.22, 14, 4.8);
+  primaryFeather(0.56, 12, 4.4);
+
+  // Barring across the primaries
+  gameCtx.strokeStyle = 'rgba(0, 0, 0, 0.28)';
+  gameCtx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(-3 - i * 3.4, -1.5);
+    gameCtx.quadraticCurveTo(-5 - i * 3.4, 2.5, -3 - i * 3.4, 6.5);
+    gameCtx.stroke();
+  }
+
+  // Covert
+  gameCtx.fillStyle = near ? p.base : p.dark;
+  gameCtx.beginPath();
+  gameCtx.ellipse(-2, 0, 7.4, 5.4, 0.2, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  gameCtx.fillStyle = near ? p.light : p.base;
+  gameCtx.beginPath();
+  gameCtx.ellipse(-1.5, -0.8, 5, 3.4, 0.2, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  gameCtx.restore();
+};
+
+// Pattern overlays. Implemented in the following commit; the colour/pattern
+// selector currently renders every variant identically.
+const applyBirdPattern = () => {};
+const applyOwlPattern = () => {};
+
+// Body outline, reused for filling and for clipping patterns to the body.
+const birdBodyPath = () => {
+  gameCtx.beginPath();
+  gameCtx.moveTo(5, 19);
+  gameCtx.bezierCurveTo(5, 9, 14, 5, 21, 7);      // back
+  gameCtx.bezierCurveTo(29, 9, 31, 16, 30, 21);   // shoulder to front
+  gameCtx.bezierCurveTo(29, 28, 20, 31, 13, 29);  // belly
+  gameCtx.bezierCurveTo(8, 27, 5, 24, 5, 19);     // back to tail
+  gameCtx.closePath();
+};
+
 // Draw Bird with Patterns
 const drawBirdWithPattern = () => {
   gameCtx.save();
   gameCtx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
-  
+
   // Rotation based on velocity, clamped both ways so the bird never spins vertical
   const angle = Math.max(-0.45, Math.min(velocity * 0.08, 0.5));
   gameCtx.rotate(angle);
   gameCtx.translate(-birdWidth / 2, -birdHeight / 2);
 
   const [color, pattern] = gameSettings.birdColor.split('-');
-  const colors = {
-    yellow: '#ffeb3b',
-    red: '#ff5252',
-    blue: '#2196f3',
-    green: '#4caf50',
-    purple: '#9c27b0',
-    pink: '#ff1493'
-  };
+  const p = birdPalette(color);
+  const beat = wingBeat();
+  wingAngle = beat * 0.3;
 
-  const baseColor = colors[color] || colors.yellow;
-
-  // Body (main oval)
-  gameCtx.fillStyle = baseColor;
-  gameCtx.beginPath();
-  gameCtx.ellipse(birdWidth / 2, birdHeight / 2, birdWidth / 2.2, birdHeight / 2.4, 0, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Wing animation
-  wingAngle = Math.sin(frameCount * 0.1) * 0.3;
-  
-  // Left Wing
-  const leftWingColor = pattern === 'stripe' ? 'rgba(0, 0, 0, 0.2)' : color === 'yellow' ? '#fdd835' : 'rgba(255, 255, 255, 0.3)';
-  gameCtx.fillStyle = leftWingColor;
+  // --- tail fan (behind everything) ---
   gameCtx.save();
-  gameCtx.translate(birdWidth / 2 - 8, birdHeight / 2 - 2);
-  gameCtx.rotate(wingAngle);
-  gameCtx.beginPath();
-  gameCtx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2);
-  gameCtx.fill();
+  gameCtx.translate(8, 20);
+  gameCtx.fillStyle = p.darker;
+  primaryFeather(-0.16, 12, 3.2);
+  primaryFeather(0.10, 13, 3.4);
+  gameCtx.fillStyle = p.dark;
+  primaryFeather(0.36, 12, 3.2);
   gameCtx.restore();
 
-  // Right Wing
-  gameCtx.save();
-  gameCtx.translate(birdWidth / 2 + 8, birdHeight / 2 - 2);
-  gameCtx.rotate(-wingAngle);
-  gameCtx.beginPath();
-  gameCtx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2);
+  // --- far wing ---
+  drawBirdWing(p, -beat, false);
+
+  // --- body ---
+  const bodyGrad = gameCtx.createLinearGradient(0, 4, 0, 32);
+  bodyGrad.addColorStop(0, p.light);
+  bodyGrad.addColorStop(0.55, p.base);
+  bodyGrad.addColorStop(1, p.dark);
+  gameCtx.fillStyle = bodyGrad;
+  birdBodyPath();
   gameCtx.fill();
+
+  // Belly
+  gameCtx.fillStyle = p.lighter;
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 24, 9, 6, -0.1, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // Pattern overlay, clipped to the body
+  applyBirdPattern(p, pattern);
+
+  // Feather scalloping across the back
+  gameCtx.save();
+  birdBodyPath();
+  gameCtx.clip();
+  gameCtx.strokeStyle = 'rgba(0, 0, 0, 0.10)';
+  gameCtx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    gameCtx.beginPath();
+    gameCtx.arc(14 + i * 6, 10 + i * 2, 6, Math.PI * 0.15, Math.PI * 0.85);
+    gameCtx.stroke();
+  }
   gameCtx.restore();
 
-  // Chest/Breast (lighter shade)
-  gameCtx.fillStyle = color === 'yellow' ? '#ffee58' : 'rgba(255, 255, 255, 0.2)';
+  // --- head ---
+  const headGrad = gameCtx.createRadialGradient(24, 10, 1, 25, 13, 11);
+  headGrad.addColorStop(0, p.light);
+  headGrad.addColorStop(1, p.base);
+  gameCtx.fillStyle = headGrad;
   gameCtx.beginPath();
-  gameCtx.ellipse(birdWidth / 2, birdHeight / 2 + 3, birdWidth / 2.8, birdHeight / 2.8, 0, 0, Math.PI * 2);
+  gameCtx.arc(25, 13, 8.4, 0, Math.PI * 2);
   gameCtx.fill();
 
-  // Eyes
-  // Left eye white
+  // Cheek
+  gameCtx.fillStyle = p.lighter;
+  gameCtx.beginPath();
+  gameCtx.ellipse(25, 16.5, 5, 3.4, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // --- eye ---
   gameCtx.fillStyle = '#ffffff';
   gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 4, birdHeight / 2 - 6, 5, 0, Math.PI * 2);
+  gameCtx.arc(27.5, 11.5, 3.9, 0, Math.PI * 2);
   gameCtx.fill();
+  gameCtx.strokeStyle = 'rgba(0,0,0,0.18)';
+  gameCtx.lineWidth = 0.8;
+  gameCtx.stroke();
 
-  // Pupil (looking forward with slight animation)
-  gameCtx.fillStyle = '#000000';
-  const pupilOffset = Math.sin(frameCount * 0.05) * 1;
+  const look = Math.sin(frameCount * 0.05) * 0.6;
+  gameCtx.fillStyle = '#5a3b1a';
   gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 4 + pupilOffset, birdHeight / 2 - 6, 3, 0, Math.PI * 2);
+  gameCtx.arc(28.6 + look, 11.6, 2.4, 0, Math.PI * 2);
   gameCtx.fill();
-
-  // Eye shine
+  gameCtx.fillStyle = '#131313';
+  gameCtx.beginPath();
+  gameCtx.arc(28.9 + look, 11.6, 1.4, 0, Math.PI * 2);
+  gameCtx.fill();
   gameCtx.fillStyle = '#ffffff';
   gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 5 + pupilOffset, birdHeight / 2 - 7, 1.2, 0, Math.PI * 2);
+  gameCtx.arc(27.9 + look, 10.4, 1.1, 0, Math.PI * 2);
   gameCtx.fill();
 
-  // Beak
-  gameCtx.fillStyle = '#ff9800';
+  // Brow
+  gameCtx.strokeStyle = p.darker;
+  gameCtx.lineWidth = 1.6;
+  gameCtx.lineCap = 'round';
   gameCtx.beginPath();
-  gameCtx.moveTo(birdWidth / 2 + 8, birdHeight / 2 - 1);
-  gameCtx.lineTo(birdWidth / 2 + 14, birdHeight / 2 - 1);
-  gameCtx.lineTo(birdWidth / 2 + 12, birdHeight / 2 + 1);
+  gameCtx.arc(27.6, 11.4, 5.2, Math.PI * 1.15, Math.PI * 1.62);
+  gameCtx.stroke();
+
+  // --- beak: upper and lower mandible, slightly parted ---
+  const beakGrad = gameCtx.createLinearGradient(31, 12, 38, 17);
+  beakGrad.addColorStop(0, '#ffb02e');
+  beakGrad.addColorStop(1, '#e8760c');
+  gameCtx.fillStyle = beakGrad;
+  gameCtx.beginPath();
+  gameCtx.moveTo(31, 12.2);
+  gameCtx.quadraticCurveTo(37.5, 13.2, 38.5, 15.4);
+  gameCtx.quadraticCurveTo(35, 15.8, 31.5, 15.4);
   gameCtx.closePath();
   gameCtx.fill();
 
-  // Tail feathers
-  gameCtx.strokeStyle = color === 'yellow' ? '#fbc02d' : 'rgba(0, 0, 0, 0.2)';
-  gameCtx.lineWidth = 2;
-  gameCtx.lineCap = 'round';
-  
-  // Tail feather 1
+  gameCtx.fillStyle = '#d2660a';
   gameCtx.beginPath();
-  gameCtx.moveTo(birdWidth / 2 - 12, birdHeight / 2 + 8);
-  gameCtx.quadraticCurveTo(birdWidth / 2 - 18, birdHeight / 2 + 10, birdWidth / 2 - 20, birdHeight / 2 + 14);
-  gameCtx.stroke();
+  gameCtx.moveTo(31.4, 16.2);
+  gameCtx.quadraticCurveTo(35.4, 16.6, 37.4, 16.4);
+  gameCtx.quadraticCurveTo(34.6, 18.6, 31.6, 18);
+  gameCtx.closePath();
+  gameCtx.fill();
 
-  // Tail feather 2
-  gameCtx.beginPath();
-  gameCtx.moveTo(birdWidth / 2 - 13, birdHeight / 2 + 12);
-  gameCtx.quadraticCurveTo(birdWidth / 2 - 19, birdHeight / 2 + 15, birdWidth / 2 - 21, birdHeight / 2 + 20);
-  gameCtx.stroke();
+  // --- near wing on top ---
+  drawBirdWing(p, beat, true);
 
   gameCtx.restore();
 };
@@ -535,96 +700,181 @@ const drawBirdWithPattern = () => {
 const drawOwl = () => {
   gameCtx.save();
   gameCtx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
-  
+
   const angle = Math.max(-0.45, Math.min(velocity * 0.08, 0.5));
   gameCtx.rotate(angle);
   gameCtx.translate(-birdWidth / 2, -birdHeight / 2);
 
-  const [color] = gameSettings.birdColor.split('-');
-  const colors = {
-    yellow: '#c4a000',
-    red: '#8b0000',
-    blue: '#001f3f',
-    green: '#2d5016',
-    purple: '#4a0e4e',
-    pink: '#8b1a3a'
+  const [color, pattern] = gameSettings.birdColor.split('-');
+  // Owls wear a duskier version of the same hue so night plumage stays muted.
+  const bright = birdPalette(color);
+  const p = {
+    base:    mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#2a1e14', 0.42),
+    light:   mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#ffe6c0', 0.30),
+    lighter: mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#fff1d8', 0.60),
+    dark:    mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#150e08', 0.62),
+    darker:  mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#0b0705', 0.78)
   };
-  const baseColor = colors[color] || colors.yellow;
+  const beat = wingBeat();
+  wingAngle = beat * 0.3;
 
-  // Body
-  gameCtx.fillStyle = baseColor;
+  // --- tail ---
+  gameCtx.fillStyle = p.darker;
   gameCtx.beginPath();
-  gameCtx.ellipse(birdWidth / 2, birdHeight / 2 + 2, birdWidth / 2.2, birdHeight / 2.2, 0, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Wing flap
-  gameCtx.fillStyle = baseColor;
-  gameCtx.save();
-  gameCtx.translate(birdWidth / 2 - 8, birdHeight / 2 + 1);
-  gameCtx.rotate(wingAngle);
-  gameCtx.beginPath();
-  gameCtx.ellipse(0, 0, 10, 10, 0.2, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.restore();
-
-  gameCtx.save();
-  gameCtx.translate(birdWidth / 2 + 8, birdHeight / 2 + 1);
-  gameCtx.rotate(-wingAngle);
-  gameCtx.beginPath();
-  gameCtx.ellipse(0, 0, 10, 10, -0.2, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.restore();
-
-  // Head
-  gameCtx.fillStyle = baseColor;
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2, birdHeight / 2 - 4, 9, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Ear tufts
-  gameCtx.beginPath();
-  gameCtx.ellipse(birdWidth / 2 - 7, birdHeight / 2 - 12, 3, 7, -0.3, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.beginPath();
-  gameCtx.ellipse(birdWidth / 2 + 7, birdHeight / 2 - 12, 3, 7, 0.3, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Left eye
-  gameCtx.fillStyle = '#ffd700';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 - 4, birdHeight / 2 - 6, 5, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.fillStyle = '#000';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 - 4, birdHeight / 2 - 6, 2.5, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.fillStyle = '#fff';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 - 3, birdHeight / 2 - 7, 1.2, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Right eye
-  gameCtx.fillStyle = '#ffd700';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 4, birdHeight / 2 - 6, 5, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.fillStyle = '#000';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 4, birdHeight / 2 - 6, 2.5, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.fillStyle = '#fff';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 5, birdHeight / 2 - 7, 1.2, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Beak
-  gameCtx.fillStyle = '#ff8c00';
-  gameCtx.beginPath();
-  gameCtx.moveTo(birdWidth / 2, birdHeight / 2 - 1);
-  gameCtx.lineTo(birdWidth / 2 + 4, birdHeight / 2 + 1);
-  gameCtx.lineTo(birdWidth / 2, birdHeight / 2 + 3);
+  gameCtx.moveTo(9, 22);
+  gameCtx.lineTo(-2, 22);
+  gameCtx.lineTo(-1, 28);
+  gameCtx.lineTo(10, 27);
   gameCtx.closePath();
   gameCtx.fill();
+  gameCtx.strokeStyle = 'rgba(0,0,0,0.35)';
+  gameCtx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(0 + i * 3, 22.5);
+    gameCtx.lineTo(1 + i * 3, 27.5);
+    gameCtx.stroke();
+  }
+
+  // --- far wing ---
+  drawOwlWing(p, -beat, false);
+
+  // --- body ---
+  const bodyGrad = gameCtx.createLinearGradient(0, 8, 0, 34);
+  bodyGrad.addColorStop(0, p.light);
+  bodyGrad.addColorStop(0.5, p.base);
+  bodyGrad.addColorStop(1, p.dark);
+  gameCtx.fillStyle = bodyGrad;
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 21, 12.5, 12, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // Breast
+  gameCtx.fillStyle = p.lighter;
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 24, 8.5, 8, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // Pattern overlay, clipped to the breast/body
+  applyOwlPattern(p, pattern);
+
+  // --- head: wide, slightly flattened ---
+  const headGrad = gameCtx.createLinearGradient(0, 2, 0, 20);
+  headGrad.addColorStop(0, p.light);
+  headGrad.addColorStop(1, p.base);
+  gameCtx.fillStyle = headGrad;
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 12, 11.5, 9.5, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // --- ear tufts ---
+  gameCtx.fillStyle = p.dark;
+  gameCtx.beginPath();
+  gameCtx.moveTo(9, 6);
+  gameCtx.quadraticCurveTo(6, -2, 12.5, 1.5);
+  gameCtx.quadraticCurveTo(13, 4, 12, 6.5);
+  gameCtx.closePath();
+  gameCtx.fill();
+  gameCtx.beginPath();
+  gameCtx.moveTo(27, 6);
+  gameCtx.quadraticCurveTo(30, -2, 23.5, 1.5);
+  gameCtx.quadraticCurveTo(23, 4, 24, 6.5);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  // --- facial disc: two overlapping discs forming the heart shape ---
+  gameCtx.fillStyle = p.lighter;
+  gameCtx.beginPath();
+  gameCtx.arc(13.4, 12.6, 6.6, 0, Math.PI * 2);
+  gameCtx.arc(22.6, 12.6, 6.6, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.strokeStyle = 'rgba(0,0,0,0.16)';
+  gameCtx.lineWidth = 1;
+  gameCtx.beginPath();
+  gameCtx.arc(13.4, 12.6, 6.6, Math.PI * 0.6, Math.PI * 1.9);
+  gameCtx.stroke();
+  gameCtx.beginPath();
+  gameCtx.arc(22.6, 12.6, 6.6, Math.PI * 1.1, Math.PI * 0.4);
+  gameCtx.stroke();
+
+  // --- eyes: large and forward facing ---
+  const blink = ((frameCount + 37) % 190) < 5;
+  [13.4, 22.6].forEach((ex, idx) => {
+    gameCtx.fillStyle = '#fdf3d8';
+    gameCtx.beginPath();
+    gameCtx.arc(ex, 12.4, 4.9, 0, Math.PI * 2);
+    gameCtx.fill();
+
+    if (blink) {
+      gameCtx.fillStyle = p.light;
+      gameCtx.beginPath();
+      gameCtx.arc(ex, 12.4, 5, 0, Math.PI * 2);
+      gameCtx.fill();
+      gameCtx.strokeStyle = p.darker;
+      gameCtx.lineWidth = 1.2;
+      gameCtx.beginPath();
+      gameCtx.moveTo(ex - 4.4, 12.4);
+      gameCtx.lineTo(ex + 4.4, 12.4);
+      gameCtx.stroke();
+      return;
+    }
+
+    // Amber iris
+    const iris = gameCtx.createRadialGradient(ex - 1, 11, 0.5, ex, 12.4, 4.4);
+    iris.addColorStop(0, '#ffd970');
+    iris.addColorStop(1, '#e08a12');
+    gameCtx.fillStyle = iris;
+    gameCtx.beginPath();
+    gameCtx.arc(ex, 12.4, 4.1, 0, Math.PI * 2);
+    gameCtx.fill();
+
+    const look = Math.sin(frameCount * 0.04) * 0.5;
+    gameCtx.fillStyle = '#0d0d0d';
+    gameCtx.beginPath();
+    gameCtx.arc(ex + look, 12.5, 2.5, 0, Math.PI * 2);
+    gameCtx.fill();
+    gameCtx.fillStyle = 'rgba(255,255,255,0.95)';
+    gameCtx.beginPath();
+    gameCtx.arc(ex + look - 1.1, 11.2, 1.15, 0, Math.PI * 2);
+    gameCtx.fill();
+    gameCtx.fillStyle = 'rgba(255,255,255,0.5)';
+    gameCtx.beginPath();
+    gameCtx.arc(ex + look + 1.3, 13.8, 0.6, 0, Math.PI * 2);
+    gameCtx.fill();
+  });
+
+  // --- hooked beak ---
+  gameCtx.fillStyle = '#e8a33c';
+  gameCtx.beginPath();
+  gameCtx.moveTo(16.4, 15.4);
+  gameCtx.lineTo(19.6, 15.4);
+  gameCtx.quadraticCurveTo(19.2, 20.4, 18, 21.2);
+  gameCtx.quadraticCurveTo(16.8, 20.4, 16.4, 15.4);
+  gameCtx.closePath();
+  gameCtx.fill();
+  gameCtx.fillStyle = 'rgba(0,0,0,0.22)';
+  gameCtx.beginPath();
+  gameCtx.moveTo(18, 15.4);
+  gameCtx.lineTo(19.6, 15.4);
+  gameCtx.quadraticCurveTo(19.2, 20.4, 18, 21.2);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  // --- talons tucked under ---
+  gameCtx.strokeStyle = '#d8a44e';
+  gameCtx.lineWidth = 1.6;
+  gameCtx.lineCap = 'round';
+  [15, 21].forEach(tx => {
+    gameCtx.beginPath();
+    gameCtx.moveTo(tx, 30.5);
+    gameCtx.lineTo(tx - 1.5, 33);
+    gameCtx.moveTo(tx, 30.5);
+    gameCtx.lineTo(tx + 1.5, 33);
+    gameCtx.stroke();
+  });
+
+  // --- near wing ---
+  drawOwlWing(p, beat, true);
 
   gameCtx.restore();
 };
