@@ -549,10 +549,65 @@ const drawOwlWing = (p, beat, near) => {
   gameCtx.restore();
 };
 
-// Pattern overlays. Implemented in the following commit; the colour/pattern
-// selector currently renders every variant identically.
-const applyBirdPattern = () => {};
-const applyOwlPattern = () => {};
+// ---------------------------------------------------------------------------
+// Colour pattern overlays
+//
+// The "-stripe" half of every colour option used to change nothing but a wing
+// tint on the day bird, and the owl discarded the pattern from the setting
+// string entirely, so "Blue" and "Blue Stripe" rendered identically. Patterns
+// are now drawn as real markings clipped to the character's silhouette.
+// ---------------------------------------------------------------------------
+
+// Bold diagonal banding across the body and head of the songbird.
+const applyBirdPattern = (p, pattern) => {
+  if (pattern !== 'stripe') return;
+  gameCtx.save();
+  birdSilhouettePath();
+  gameCtx.clip();
+
+  gameCtx.fillStyle = p.darker;
+  gameCtx.globalAlpha = 0.75;
+  for (let i = -6; i < 44; i += 9) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(i, 2);
+    gameCtx.lineTo(i + 4.5, 2);
+    gameCtx.lineTo(i - 4.5, 36);
+    gameCtx.lineTo(i - 9, 36);
+    gameCtx.closePath();
+    gameCtx.fill();
+  }
+  gameCtx.globalAlpha = 1;
+  gameCtx.restore();
+};
+
+// Horizontal feather barring across the owl's breast, as on a real barred owl.
+const applyOwlPattern = (p, pattern) => {
+  if (pattern !== 'stripe') return;
+  gameCtx.save();
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 21, 12.5, 12, 0, 0, Math.PI * 2);
+  gameCtx.clip();
+
+  gameCtx.strokeStyle = p.dark;
+  gameCtx.globalAlpha = 0.85;
+  gameCtx.lineWidth = 2;
+  for (let y = 12; y < 34; y += 4.5) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(4, y);
+    gameCtx.quadraticCurveTo(18, y + 3, 32, y);
+    gameCtx.stroke();
+  }
+  gameCtx.globalAlpha = 1;
+  gameCtx.restore();
+};
+
+// Body plus head as one region, used to clip pattern markings to the bird's
+// outline so stripes stop at the edge instead of spilling into the sky.
+const birdSilhouettePath = () => {
+  birdBodyPath();
+  gameCtx.moveTo(33.4, 13);
+  gameCtx.arc(25, 13, 8.4, 0, Math.PI * 2);
+};
 
 // Body outline, reused for filling and for clipping patterns to the body.
 const birdBodyPath = () => {
@@ -608,9 +663,6 @@ const drawBirdWithPattern = () => {
   gameCtx.ellipse(18, 24, 9, 6, -0.1, 0, Math.PI * 2);
   gameCtx.fill();
 
-  // Pattern overlay, clipped to the body
-  applyBirdPattern(p, pattern);
-
   // Feather scalloping across the back
   gameCtx.save();
   birdBodyPath();
@@ -638,6 +690,10 @@ const drawBirdWithPattern = () => {
   gameCtx.beginPath();
   gameCtx.ellipse(25, 16.5, 5, 3.4, 0, 0, Math.PI * 2);
   gameCtx.fill();
+
+  // Pattern markings, drawn after the head so they run across body and head
+  // together, but before the eye and beak so those stay clear.
+  applyBirdPattern(p, pattern);
 
   // --- eye ---
   gameCtx.fillStyle = '#ffffff';
