@@ -232,7 +232,7 @@ const mixHex = (a, b, t) => {
 };
 
 // Windows for one building, in whichever grid style it was assigned.
-const drawBuildingWindows = (b, bx, by, night, depth) => {
+const drawBuildingWindows = (ctx, b, bx, by, night) => {
   const pad = 6;
   const litColors = ['#ffe9a3', '#ffd782', '#fff3c4', '#ffc76b'];
   const darkGlass = night ? '#12172b' : '#c8cdd8';
@@ -241,11 +241,11 @@ const drawBuildingWindows = (b, bx, by, night, depth) => {
     // Continuous horizontal glazing, modern office block
     for (let row = 0, wy = by + pad; wy < by + b.h - pad - 4; row++, wy += b.rowGap) {
       const lit = night && windowNoise(b.litSeed, row, 0) > 0.45;
-      gameCtx.fillStyle = lit ? litColors[Math.floor(windowNoise(b.litSeed, row, 1) * litColors.length)] : darkGlass;
-      gameCtx.globalAlpha = lit ? 0.9 : (night ? 0.9 : 0.75);
-      gameCtx.fillRect(Math.round(bx + pad), Math.round(wy), Math.round(b.w - pad * 2), 4);
+      ctx.fillStyle = lit ? litColors[Math.floor(windowNoise(b.litSeed, row, 1) * litColors.length)] : darkGlass;
+      ctx.globalAlpha = lit ? 0.9 : (night ? 0.9 : 0.75);
+      ctx.fillRect(Math.round(bx + pad), Math.round(wy), Math.round(b.w - pad * 2), 4);
     }
-    gameCtx.globalAlpha = 1;
+    ctx.globalAlpha = 1;
     return;
   }
 
@@ -263,24 +263,24 @@ const drawBuildingWindows = (b, bx, by, night, depth) => {
       if (lit) {
         // Soft halo instead of a canvas shadow, which used to bleed onto
         // everything drawn afterwards.
-        gameCtx.fillStyle = 'rgba(255, 224, 130, 0.16)';
-        gameCtx.fillRect(Math.round(wx - 2), Math.round(wy - 2), Math.round(ww + 4), Math.round(wh + 4));
-        gameCtx.fillStyle = litColors[Math.floor(n * 997) % litColors.length];
+        ctx.fillStyle = 'rgba(255, 224, 130, 0.16)';
+        ctx.fillRect(Math.round(wx - 2), Math.round(wy - 2), Math.round(ww + 4), Math.round(wh + 4));
+        ctx.fillStyle = litColors[Math.floor(n * 997) % litColors.length];
       } else {
-        gameCtx.fillStyle = darkGlass;
-        gameCtx.globalAlpha = night ? 1 : 0.7;
+        ctx.fillStyle = darkGlass;
+        ctx.globalAlpha = night ? 1 : 0.7;
       }
-      gameCtx.fillRect(Math.round(wx), Math.round(wy), Math.round(ww), Math.round(wh));
-      gameCtx.globalAlpha = 1;
+      ctx.fillRect(Math.round(wx), Math.round(wy), Math.round(ww), Math.round(wh));
+      ctx.globalAlpha = 1;
     }
   }
 };
 
 // One building: body, roof treatment, windows.
-const drawBuilding = (b, offsetX, groundY, night, layer) => {
+const drawBuilding = (ctx, b, offsetX, groundY, night, layer, canvasW) => {
   const bx = Math.round(b.x - offsetX);
   const by = Math.round(groundY - b.h);
-  if (bx > gameCanvas.width + 40 || bx + b.w < -40) return;
+  if (bx > canvasW + 40 || bx + b.w < -40) return;
 
   const base = night
     ? (layer === 'far' ? '#161b30' : '#0e1220')
@@ -292,67 +292,66 @@ const drawBuilding = (b, offsetX, groundY, night, layer) => {
   const body = mixHex(base, alt, b.tint);
 
   // Body with a vertical face shade so towers aren't flat
-  const g = gameCtx.createLinearGradient(bx, 0, bx + b.w, 0);
+  const g = ctx.createLinearGradient(bx, 0, bx + b.w, 0);
   g.addColorStop(0, body);
   g.addColorStop(0.75, body);
   g.addColorStop(1, night ? '#080b14' : '#788494');
-  gameCtx.fillStyle = g;
-  gameCtx.fillRect(bx, by, b.w, b.h);
+  ctx.fillStyle = g;
+  ctx.fillRect(bx, by, b.w, b.h);
 
   // Roof treatments
-  gameCtx.fillStyle = night ? '#0a0e1a' : '#6f7b8f';
+  ctx.fillStyle = night ? '#0a0e1a' : '#6f7b8f';
   if (b.roof === 'parapet') {
-    gameCtx.fillRect(bx - 2, by - 4, b.w + 4, 4);
+    ctx.fillRect(bx - 2, by - 4, b.w + 4, 4);
   } else if (b.roof === 'stepped') {
     const w2 = Math.round(b.w * 0.66), h2 = 14;
-    gameCtx.fillStyle = body;
-    gameCtx.fillRect(bx + (b.w - w2) / 2, by - h2, w2, h2);
+    ctx.fillStyle = body;
+    ctx.fillRect(bx + (b.w - w2) / 2, by - h2, w2, h2);
     const w3 = Math.round(b.w * 0.36), h3 = 12;
-    gameCtx.fillRect(bx + (b.w - w3) / 2, by - h2 - h3, w3, h3);
-    gameCtx.fillStyle = night ? '#0a0e1a' : '#6f7b8f';
-    gameCtx.fillRect(bx + (b.w - w3) / 2, by - h2 - h3 - 3, w3, 3);
+    ctx.fillRect(bx + (b.w - w3) / 2, by - h2 - h3, w3, h3);
+    ctx.fillStyle = night ? '#0a0e1a' : '#6f7b8f';
+    ctx.fillRect(bx + (b.w - w3) / 2, by - h2 - h3 - 3, w3, 3);
   } else if (b.roof === 'antenna') {
     const mx = Math.round(bx + b.w / 2);
-    gameCtx.fillRect(bx - 2, by - 3, b.w + 4, 3);
-    gameCtx.fillRect(mx - 1, by - 26, 2, 26);
+    ctx.fillRect(bx - 2, by - 3, b.w + 4, 3);
+    ctx.fillRect(mx - 1, by - 26, 2, 26);
     if (b.beacon) {
-      gameCtx.fillStyle = night ? 'rgba(255, 70, 70, 0.35)' : 'rgba(200, 60, 60, 0.25)';
-      gameCtx.beginPath(); gameCtx.arc(mx, by - 27, 4, 0, Math.PI * 2); gameCtx.fill();
-      gameCtx.fillStyle = night ? '#ff5252' : '#c0392b';
-      gameCtx.beginPath(); gameCtx.arc(mx, by - 27, 1.8, 0, Math.PI * 2); gameCtx.fill();
+      ctx.fillStyle = night ? 'rgba(255, 70, 70, 0.35)' : 'rgba(200, 60, 60, 0.25)';
+      ctx.beginPath(); ctx.arc(mx, by - 27, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = night ? '#ff5252' : '#c0392b';
+      ctx.beginPath(); ctx.arc(mx, by - 27, 1.8, 0, Math.PI * 2); ctx.fill();
     }
   } else if (b.roof === 'watertower') {
     const mx = Math.round(bx + b.w / 2);
-    gameCtx.fillRect(bx - 2, by - 3, b.w + 4, 3);
-    gameCtx.fillRect(mx - 8, by - 10, 2, 8);
-    gameCtx.fillRect(mx + 6, by - 10, 2, 8);
-    gameCtx.fillRect(mx - 9, by - 20, 18, 10);
-    gameCtx.beginPath();
-    gameCtx.moveTo(mx - 9, by - 20); gameCtx.lineTo(mx, by - 26); gameCtx.lineTo(mx + 9, by - 20);
-    gameCtx.closePath(); gameCtx.fill();
+    ctx.fillRect(bx - 2, by - 3, b.w + 4, 3);
+    ctx.fillRect(mx - 8, by - 10, 2, 8);
+    ctx.fillRect(mx + 6, by - 10, 2, 8);
+    ctx.fillRect(mx - 9, by - 20, 18, 10);
+    ctx.beginPath();
+    ctx.moveTo(mx - 9, by - 20); ctx.lineTo(mx, by - 26); ctx.lineTo(mx + 9, by - 20);
+    ctx.closePath(); ctx.fill();
   } else if (b.roof === 'spire') {
     const mx = Math.round(bx + b.w / 2);
-    gameCtx.beginPath();
-    gameCtx.moveTo(bx + b.w * 0.25, by); gameCtx.lineTo(mx, by - 22); gameCtx.lineTo(bx + b.w * 0.75, by);
-    gameCtx.closePath(); gameCtx.fill();
+    ctx.beginPath();
+    ctx.moveTo(bx + b.w * 0.25, by); ctx.lineTo(mx, by - 22); ctx.lineTo(bx + b.w * 0.75, by);
+    ctx.closePath(); ctx.fill();
   }
 
-  drawBuildingWindows(b, bx, by, night, layer);
+  drawBuildingWindows(ctx, b, bx, by, night);
 
   // Vertical edge shadow to separate neighbours
-  gameCtx.fillStyle = night ? 'rgba(0, 0, 0, 0.45)' : 'rgba(0, 0, 0, 0.13)';
-  gameCtx.fillRect(bx + b.w - 3, by, 3, b.h);
+  ctx.fillStyle = night ? 'rgba(0, 0, 0, 0.45)' : 'rgba(0, 0, 0, 0.13)';
+  ctx.fillRect(bx + b.w - 3, by, 3, b.h);
 };
 
-// City Background Drawing
-const drawCityBackground = () => {
-  const night = gameSettings.theme === 'night';
-  const H = gameCanvas.height;
-  const W = gameCanvas.width;
-  const groundY = H - 80;
+// Shared skyline renderer. Takes the target context so the game canvas and the
+// home screen can draw the same city instead of maintaining two separate
+// versions of it.
+const drawSkyline = (ctx, W, H, groundHeight, night, scrollFrames) => {
+  const groundY = H - groundHeight;
 
   // Sky gradient
-  const gradient = gameCtx.createLinearGradient(0, 0, 0, H);
+  const gradient = ctx.createLinearGradient(0, 0, 0, H);
   if (night) {
     gradient.addColorStop(0, '#0b1026');
     gradient.addColorStop(0.55, '#1a1f3a');
@@ -362,10 +361,10 @@ const drawCityBackground = () => {
     gradient.addColorStop(0.55, '#70c5ce');
     gradient.addColorStop(1, '#b8e6ee');
   }
-  gameCtx.fillStyle = gradient;
-  gameCtx.fillRect(0, 0, W, H);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, W, H);
 
-  gameCtx.save();
+  ctx.save();
 
   if (night) {
     // Static star field and moon. Positions come from the hash, so nothing moves.
@@ -373,27 +372,28 @@ const drawCityBackground = () => {
       const sx = Math.round(windowNoise(101, s, 0) * W);
       const sy = Math.round(windowNoise(101, s, 1) * (H * 0.55));
       const a = 0.25 + windowNoise(101, s, 2) * 0.6;
-      gameCtx.fillStyle = `rgba(255, 255, 255, ${a.toFixed(2)})`;
-      gameCtx.fillRect(sx, sy, windowNoise(101, s, 3) > 0.85 ? 2 : 1, windowNoise(101, s, 3) > 0.85 ? 2 : 1);
+      ctx.fillStyle = `rgba(255, 255, 255, ${a.toFixed(2)})`;
+      ctx.fillRect(sx, sy, windowNoise(101, s, 3) > 0.85 ? 2 : 1, windowNoise(101, s, 3) > 0.85 ? 2 : 1);
     }
-    gameCtx.fillStyle = 'rgba(255, 250, 220, 0.10)';
-    gameCtx.beginPath(); gameCtx.arc(392, 84, 38, 0, Math.PI * 2); gameCtx.fill();
-    gameCtx.fillStyle = '#f6f2d8';
-    gameCtx.beginPath(); gameCtx.arc(392, 84, 24, 0, Math.PI * 2); gameCtx.fill();
-    gameCtx.fillStyle = night ? 'rgba(190, 186, 160, 0.55)' : 'transparent';
-    gameCtx.beginPath(); gameCtx.arc(383, 77, 5, 0, Math.PI * 2); gameCtx.fill();
-    gameCtx.beginPath(); gameCtx.arc(400, 92, 7, 0, Math.PI * 2); gameCtx.fill();
-    gameCtx.beginPath(); gameCtx.arc(399, 72, 3.5, 0, Math.PI * 2); gameCtx.fill();
+    const mx = W - 88, my = 84;
+    ctx.fillStyle = 'rgba(255, 250, 220, 0.10)';
+    ctx.beginPath(); ctx.arc(mx, my, 38, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f6f2d8';
+    ctx.beginPath(); ctx.arc(mx, my, 24, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(190, 186, 160, 0.55)';
+    ctx.beginPath(); ctx.arc(mx - 9, my - 7, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + 8, my + 8, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + 7, my - 12, 3.5, 0, Math.PI * 2); ctx.fill();
   } else {
     // Soft clouds, also fixed in place
-    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
     const puff = (cx, cy, s) => {
-      gameCtx.beginPath();
-      gameCtx.arc(cx, cy, 16 * s, 0, Math.PI * 2);
-      gameCtx.arc(cx + 18 * s, cy + 4 * s, 12 * s, 0, Math.PI * 2);
-      gameCtx.arc(cx - 18 * s, cy + 5 * s, 11 * s, 0, Math.PI * 2);
-      gameCtx.arc(cx + 4 * s, cy - 10 * s, 12 * s, 0, Math.PI * 2);
-      gameCtx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 16 * s, 0, Math.PI * 2);
+      ctx.arc(cx + 18 * s, cy + 4 * s, 12 * s, 0, Math.PI * 2);
+      ctx.arc(cx - 18 * s, cy + 5 * s, 11 * s, 0, Math.PI * 2);
+      ctx.arc(cx + 4 * s, cy - 10 * s, 12 * s, 0, Math.PI * 2);
+      ctx.fill();
     };
     puff(90, 90, 1); puff(330, 60, 0.8); puff(240, 150, 0.6);
   }
@@ -401,28 +401,34 @@ const drawCityBackground = () => {
   const city = getCity();
   // Parallax: far layer creeps, near layer drifts. Both are far slower than the
   // pipes, and offsets are whole pixels so nothing shimmers.
-  const farOffset = Math.round(frameCount * 0.10) % city.far.stripWidth;
-  const nearOffset = Math.round(frameCount * 0.28) % city.near.stripWidth;
+  const farOffset = Math.round(scrollFrames * 0.10) % city.far.stripWidth;
+  const nearOffset = Math.round(scrollFrames * 0.28) % city.near.stripWidth;
 
   for (let rep = 0; rep <= 1; rep++) {
     city.far.buildings.forEach(b =>
-      drawBuilding(b, farOffset - rep * city.far.stripWidth, groundY - 26, night, 'far'));
+      drawBuilding(ctx, b, farOffset - rep * city.far.stripWidth, groundY - 26, night, 'far', W));
   }
   // Haze over the far layer pushes it back visually
-  gameCtx.fillStyle = night ? 'rgba(11, 16, 38, 0.45)' : 'rgba(150, 205, 220, 0.42)';
-  gameCtx.fillRect(0, 0, W, groundY);
+  ctx.fillStyle = night ? 'rgba(11, 16, 38, 0.45)' : 'rgba(150, 205, 220, 0.42)';
+  ctx.fillRect(0, 0, W, groundY);
 
   for (let rep = 0; rep <= 1; rep++) {
     city.near.buildings.forEach(b =>
-      drawBuilding(b, nearOffset - rep * city.near.stripWidth, groundY, night, 'near'));
+      drawBuilding(ctx, b, nearOffset - rep * city.near.stripWidth, groundY, night, 'near', W));
   }
 
-  gameCtx.restore();
+  ctx.restore();
 
   // Make sure no shadow or alpha state leaks into the pipes, bird or ground.
-  gameCtx.globalAlpha = 1;
-  gameCtx.shadowColor = 'transparent';
-  gameCtx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+};
+
+// City Background Drawing
+const drawCityBackground = () => {
+  drawSkyline(gameCtx, gameCanvas.width, gameCanvas.height, 80,
+              gameSettings.theme === 'night', frameCount);
 };
 
 // ---------------------------------------------------------------------------
@@ -1235,39 +1241,32 @@ const hideGameOverModal = () => {
 };
 
 // Draw Home Screen
+//
+// Uses the same skyline renderer as the game so the two screens match, and so
+// the home screen picks up the night theme instead of always showing daytime.
 const drawHomescreen = () => {
-  const gradient = homeCtx.createLinearGradient(0, 0, 0, homeCanvas.height);
-  gradient.addColorStop(0, '#87ceeb');
-  gradient.addColorStop(1, '#e0f6ff');
-  homeCtx.fillStyle = gradient;
-  homeCtx.fillRect(0, 0, homeCanvas.width, homeCanvas.height);
+  const night = gameSettings.theme === 'night';
+  const GROUND = 100;
 
-  // Draw simple city on homescreen
-  const buildingWidth = 50;
-  const spacing = 70;
-  for (let i = 0; i < homeCanvas.width / spacing + 1; i++) {
-    const x = i * spacing;
-    const height = 100 + (Math.sin(i * 0.5) * 50);
-    const y = homeCanvas.height - height - 100;
-    
-    homeCtx.fillStyle = '#8b8b9a';
-    homeCtx.fillRect(x, y, buildingWidth, height);
-    homeCtx.strokeStyle = '#666';
-    homeCtx.lineWidth = 2;
-    homeCtx.strokeRect(x, y, buildingWidth, height);
-
-    // Windows
-    for (let row = 0; row < Math.floor(height / 14) - 1; row++) {
-      for (let col = 0; col < 2; col++) {
-        homeCtx.fillStyle = '#d0d0d0';
-        homeCtx.fillRect(x + 8 + col * 14, y + 12 + row * 14, 8, 8);
-      }
-    }
-  }
+  drawSkyline(homeCtx, homeCanvas.width, homeCanvas.height, GROUND, night, 0);
 
   // Ground
-  homeCtx.fillStyle = '#dcae5d';
-  homeCtx.fillRect(0, homeCanvas.height - 100, homeCanvas.width, 100);
+  const top = homeCanvas.height - GROUND;
+  const g = homeCtx.createLinearGradient(0, top, 0, homeCanvas.height);
+  if (night) {
+    g.addColorStop(0, '#6b5636');
+    g.addColorStop(1, '#4a3a24');
+  } else {
+    g.addColorStop(0, '#e8be6f');
+    g.addColorStop(1, '#cf9d4c');
+  }
+  homeCtx.fillStyle = g;
+  homeCtx.fillRect(0, top, homeCanvas.width, GROUND);
+
+  homeCtx.fillStyle = night ? '#2f5a2c' : '#5cbf3f';
+  homeCtx.fillRect(0, top, homeCanvas.width, 6);
+  homeCtx.fillStyle = night ? 'rgba(255,255,255,0.06)' : 'rgba(255, 255, 255, 0.25)';
+  homeCtx.fillRect(0, top, homeCanvas.width, 2);
 };
 
 // Animation Loop
