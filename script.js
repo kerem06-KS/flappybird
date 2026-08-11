@@ -452,40 +452,92 @@ const drawOwl = () => {
 
 // Draw Pipes
 const drawPipes = () => {
-  const pipeBody = gameSettings.theme === 'night' ? '#1f6b1e' : '#2d9b2b';
-  const pipeEdge = gameSettings.theme === 'night' ? '#154a14' : '#238021';
+  const night = gameSettings.theme === 'night';
+
+  // Palette for the moulded-plastic look. The gradient across the width is what
+  // sells the cylinder; a flat fill always reads as a rectangle.
+  const pal = night
+    ? { lightest: '#4f8f3e', light: '#39762c', mid: '#256b1f', dark: '#14430f', outline: '#0c2a09' }
+    : { lightest: '#8fd96a', light: '#5cbf3f', mid: '#33a02c', dark: '#1d6b18', outline: '#12490f' };
+
+  // Horizontal gradient shared by body and rim: dark edge, bright highlight just
+  // off the left edge, mid tone through the middle, deep shadow on the right.
+  const shadeGradient = (x, w) => {
+    const g = gameCtx.createLinearGradient(x, 0, x + w, 0);
+    g.addColorStop(0,    pal.dark);
+    g.addColorStop(0.10, pal.light);
+    g.addColorStop(0.22, pal.lightest);
+    g.addColorStop(0.42, pal.mid);
+    g.addColorStop(0.78, pal.mid);
+    g.addColorStop(0.92, pal.dark);
+    g.addColorStop(1,    pal.outline);
+    return g;
+  };
+
+  const RIM_H = 26;      // height of the lip at the open end
+  const RIM_OVER = 6;    // how far the lip overhangs each side of the shaft
+
+  // The shaft: gradient body, subtle horizontal seams for texture, hard outline.
+  const drawShaft = (x, y, w, h) => {
+    if (h <= 0) return;
+    gameCtx.fillStyle = shadeGradient(x, w);
+    gameCtx.fillRect(x, y, w, h);
+
+    // Moulding seams every 26px so long runs of pipe aren't a blank slab.
+    gameCtx.strokeStyle = 'rgba(0, 0, 0, 0.07)';
+    gameCtx.lineWidth = 1;
+    for (let sy = y + 13; sy < y + h; sy += 26) {
+      gameCtx.beginPath();
+      gameCtx.moveTo(x + 3, sy + 0.5);
+      gameCtx.lineTo(x + w - 3, sy + 0.5);
+      gameCtx.stroke();
+    }
+
+    // Specular streak down the highlight band
+    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.13)';
+    gameCtx.fillRect(x + w * 0.17, y, w * 0.07, h);
+
+    gameCtx.strokeStyle = pal.outline;
+    gameCtx.lineWidth = 2;
+    gameCtx.strokeRect(x + 1, y - 1, w - 2, h + 2);
+  };
+
+  // The lip at the open end, drawn wider than the shaft so it reads as a collar.
+  const drawRim = (x, y, w) => {
+    const rx = x - RIM_OVER;
+    const rw = w + RIM_OVER * 2;
+
+    gameCtx.fillStyle = shadeGradient(rx, rw);
+    gameCtx.fillRect(rx, y, rw, RIM_H);
+
+    // Bright top bevel and dark bottom bevel give the collar thickness
+    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+    gameCtx.fillRect(rx + 2, y + 2, rw - 4, 3);
+    gameCtx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    gameCtx.fillRect(rx + 2, y + RIM_H - 5, rw - 4, 3);
+
+    // Specular streak, aligned with the shaft's
+    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    gameCtx.fillRect(rx + rw * 0.17, y, rw * 0.07, RIM_H);
+
+    gameCtx.strokeStyle = pal.outline;
+    gameCtx.lineWidth = 2;
+    gameCtx.strokeRect(rx + 1, y + 1, rw - 2, RIM_H - 2);
+  };
 
   gameCtx.save();
-  // Every fill style is set explicitly per shape. Previously the highlight colour
-  // set at the end of one iteration leaked into the next pipe's body fill, which
-  // drew that pipe almost invisibly (the "ghost pipe") until the pipe ahead of it
-  // was culled from the array.
+  // Every shape sets its own fill explicitly. A shared fill set once outside the
+  // loop was what previously produced the near-invisible "ghost pipe".
   pipes.forEach(pipe => {
     const bottomHeight = gameCanvas.height - pipe.bottomY - 80;
 
-    // Top pipe body
-    gameCtx.fillStyle = pipeBody;
-    gameCtx.fillRect(pipe.x, 0, pipeWidth, pipe.topHeight);
+    // Top pipe: shaft hangs from the ceiling, rim sits at its lower (open) end
+    drawShaft(pipe.x, 0, pipeWidth, pipe.topHeight - RIM_H);
+    drawRim(pipe.x, pipe.topHeight - RIM_H, pipeWidth);
 
-    // Top pipe shading down the right edge
-    gameCtx.fillStyle = pipeEdge;
-    gameCtx.fillRect(pipe.x + pipeWidth - 8, 0, 8, pipe.topHeight);
-
-    // Top pipe highlight
-    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-    gameCtx.fillRect(pipe.x + 6, 0, 10, pipe.topHeight);
-
-    // Bottom pipe body
-    gameCtx.fillStyle = pipeBody;
-    gameCtx.fillRect(pipe.x, pipe.bottomY, pipeWidth, bottomHeight);
-
-    // Bottom pipe shading down the right edge
-    gameCtx.fillStyle = pipeEdge;
-    gameCtx.fillRect(pipe.x + pipeWidth - 8, pipe.bottomY, 8, bottomHeight);
-
-    // Bottom pipe highlight
-    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-    gameCtx.fillRect(pipe.x + 6, pipe.bottomY, 10, bottomHeight);
+    // Bottom pipe: rim at its upper (open) end, shaft runs down to the ground
+    drawRim(pipe.x, pipe.bottomY, pipeWidth);
+    drawShaft(pipe.x, pipe.bottomY + RIM_H, pipeWidth, bottomHeight - RIM_H);
   });
   gameCtx.restore();
 };
