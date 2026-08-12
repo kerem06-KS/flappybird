@@ -40,11 +40,21 @@ const gameSettings = {
 // and are managed by the music controller further down.
 // ===========================================================================
 
-// Music and sound effects are gated independently. Persistence and the
-// settings UI are wired up further down.
+// Music and sound effects are gated independently: toggling one never touches
+// the other. Stored under their own localStorage keys, alongside the existing
+// theme and highscore keys.
+const AUDIO_KEYS = {
+  music: 'flappyBirdMusicEnabled',
+  sfx: 'flappyBirdSfxEnabled'
+};
+
+// Anything other than an explicit 'false' means on, so a first-time player
+// gets audio by default.
+const readAudioPref = (key) => localStorage.getItem(key) !== 'false';
+
 const audioSettings = {
-  musicEnabled: true,
-  sfxEnabled: true
+  musicEnabled: readAudioPref(AUDIO_KEYS.music),
+  sfxEnabled: readAudioPref(AUDIO_KEYS.sfx)
 };
 
 const SFX = {
@@ -78,8 +88,10 @@ const SFX = {
   })
 };
 
-// Play a one-shot sound effect.
+// Play a one-shot sound effect. Every effect goes through here, so the sound
+// effects toggle only needs to be checked in one place.
 const playSfx = (name) => {
+  if (!audioSettings.sfxEnabled) return;
   const sound = SFX[name];
   if (sound) sound.play();
 };
@@ -161,6 +173,29 @@ const musicKeyForState = () => {
 const stopMusic = () => {
   currentMusic = null;
   Object.values(MUSIC).forEach(fadeOutAndStop);
+};
+
+// --- Audio settings toggles -------------------------------------------------
+
+const setMusicEnabled = (enabled) => {
+  audioSettings.musicEnabled = enabled;
+  localStorage.setItem(AUDIO_KEYS.music, String(enabled));
+
+  // Applied immediately: no reload, and no effect on sound effects.
+  if (enabled) {
+    const key = currentMusic || musicKeyForState();
+    currentMusic = null;      // force playMusicFor to act rather than no-op
+    playMusicFor(key);
+  } else {
+    Object.values(MUSIC).forEach(fadeOutAndStop);
+  }
+};
+
+const setSfxEnabled = (enabled) => {
+  audioSettings.sfxEnabled = enabled;
+  localStorage.setItem(AUDIO_KEYS.sfx, String(enabled));
+  // Nothing else to do: playSfx checks the flag on every call, and music is
+  // deliberately left alone.
 };
 // Flight feel is tuned per difficulty:
 //  - flapPower:    how much lift one tap gives (smaller = gentler, more controlled hops)
@@ -277,6 +312,12 @@ const loadSettings = () => {
   // Update UI
   document.querySelector(`input[name="difficulty"][value="${gameSettings.difficulty}"]`).checked = true;
   document.querySelector(`input[name="birdColor"][value="${gameSettings.birdColor}"]`).checked = true;
+
+  // Reflect the stored audio preferences in the toggles
+  const musicToggle = document.getElementById('musicToggle');
+  const sfxToggle = document.getElementById('sfxToggle');
+  if (musicToggle) musicToggle.checked = audioSettings.musicEnabled;
+  if (sfxToggle) sfxToggle.checked = audioSettings.sfxEnabled;
 };
 
 const saveSettings = () => {
@@ -1528,6 +1569,26 @@ document.querySelectorAll('input[name="birdColor"]').forEach(input => {
     playSfx('uiClick');
   });
 });
+
+// Audio toggles. Each one writes its own key and touches only its own domain,
+// so switching music off leaves sound effects untouched and vice versa.
+const musicToggleEl = document.getElementById('musicToggle');
+if (musicToggleEl) {
+  musicToggleEl.addEventListener('change', (e) => {
+    setMusicEnabled(e.target.checked);
+    // The tick confirms the interaction, and is itself silent when effects are
+    // off, which is the correct behaviour.
+    playSfx('uiClick');
+  });
+}
+
+const sfxToggleEl = document.getElementById('sfxToggle');
+if (sfxToggleEl) {
+  sfxToggleEl.addEventListener('change', (e) => {
+    setSfxEnabled(e.target.checked);
+    playSfx('uiClick');
+  });
+}
 
 // Keyboard Controls
 document.addEventListener('keydown', (e) => {
