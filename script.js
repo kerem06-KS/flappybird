@@ -40,6 +40,13 @@ const gameSettings = {
 // and are managed by the music controller further down.
 // ===========================================================================
 
+// Music and sound effects are gated independently. Persistence and the
+// settings UI are wired up further down.
+const audioSettings = {
+  musicEnabled: true,
+  sfxEnabled: true
+};
+
 const SFX = {
   flap: new Howl({
     src: ['assets/sounds/flap_sound.mp3'],
@@ -80,6 +87,81 @@ const playSfx = (name) => {
 // Backwards-compatible aliases for the original two sounds.
 const flapSound = SFX.flap;
 const scoreSound = SFX.score;
+
+// --- Background music -------------------------------------------------------
+// Three looping tracks: one for the home screen and one for each theme during
+// play. Volumes are the target level a track fades up to.
+
+const MUSIC_VOLUME = 0.35;
+const MUSIC_FADE_MS = 700;
+
+const MUSIC = {
+  home: new Howl({
+    src: ['assets/music/music_home.mp3'],
+    loop: true,
+    volume: 0
+  }),
+  day: new Howl({
+    src: ['assets/music/music_day.mp3'],
+    loop: true,
+    volume: 0
+  }),
+  night: new Howl({
+    src: ['assets/music/music_night.mp3'],
+    loop: true,
+    volume: 0
+  })
+};
+
+// Which track should be playing right now, so repeated calls are no-ops rather
+// than restarting the same track from the top.
+let currentMusic = null;
+
+// Fade a track out and stop it once silent. Stopping immediately would cut the
+// audio off abruptly, which is what the crossfade exists to avoid.
+const fadeOutAndStop = (track) => {
+  if (!track || !track.playing()) return;
+  const from = track.volume();
+  track.fade(from, 0, MUSIC_FADE_MS);
+  setTimeout(() => {
+    // Guard against the track having been restarted during the fade
+    if (track.volume() === 0) track.stop();
+  }, MUSIC_FADE_MS + 50);
+};
+
+// Crossfade to the named track ('home' | 'day' | 'night'), or to silence when
+// passed null.
+const playMusicFor = (key) => {
+  const next = key ? MUSIC[key] : null;
+
+  if (currentMusic === key && next && next.playing()) return;
+  currentMusic = key;
+
+  // Fade down anything else that is still audible
+  Object.entries(MUSIC).forEach(([name, track]) => {
+    if (track !== next) fadeOutAndStop(track);
+  });
+
+  if (!next) return;
+  if (!audioSettings.musicEnabled) return;
+
+  if (!next.playing()) {
+    next.volume(0);
+    next.play();
+  }
+  next.fade(next.volume(), MUSIC_VOLUME, MUSIC_FADE_MS);
+};
+
+// The track appropriate to the current screen and theme.
+const musicKeyForState = () => {
+  if (gameState === 'playing') return gameSettings.theme === 'night' ? 'night' : 'day';
+  return 'home';
+};
+
+const stopMusic = () => {
+  currentMusic = null;
+  Object.values(MUSIC).forEach(fadeOutAndStop);
+};
 // Flight feel is tuned per difficulty:
 //  - flapPower:    how much lift one tap gives (smaller = gentler, more controlled hops)
 //  - gravity:      how hard the bird is pulled down
@@ -1249,6 +1331,10 @@ const endGame = () => {
   if (gameState !== 'playing') return;
   gameState = 'gameOver';
 
+  // Fade the gameplay track out so the game-over phrase is not competing
+  // with it, rather than letting the music cut dead.
+  playMusicFor(null);
+
   // Impact first, then the game-over phrase once the hit has registered.
   playSfx('collision');
   setTimeout(() => playSfx('gameOver'), 260);
@@ -1356,6 +1442,7 @@ const hideSettingsModal = () => {
 // Show Home Screen
 const showHomescreen = () => {
   gameState = 'home';
+  playMusicFor('home');
   document.getElementById('homescreen').classList.add('active');
   document.getElementById('gamescreen').classList.remove('active');
   drawHomescreen();
@@ -1367,6 +1454,7 @@ const showGamescreen = () => {
   document.getElementById('gamescreen').classList.add('active');
   gameState = 'playing';
   initGame();
+  playMusicFor(musicKeyForState());
 };
 
 // Update HUD
@@ -1429,6 +1517,7 @@ document.querySelectorAll('input[name="theme"]').forEach(input => {
   input.addEventListener('change', (e) => {
     setTheme(e.target.value);
     playSfx('uiClick');
+    playMusicFor(musicKeyForState());
     drawHomescreen();
   });
 });
@@ -1470,6 +1559,17 @@ homeCanvas.addEventListener('click', () => {
     showSettingsModal();
   }
 });
+
+// Browsers refuse to start audio before the user has interacted with the page,
+// so the home track cannot simply be started on load. Kick it off on the first
+// interaction instead, then remove the listeners.
+const startMusicOnFirstInteraction = () => {
+  playMusicFor(musicKeyForState());
+  document.removeEventListener('pointerdown', startMusicOnFirstInteraction);
+  document.removeEventListener('keydown', startMusicOnFirstInteraction);
+};
+document.addEventListener('pointerdown', startMusicOnFirstInteraction);
+document.addEventListener('keydown', startMusicOnFirstInteraction);
 
 // Initialize
 loadSettings();
