@@ -25,6 +25,10 @@ let score = 0;
 let pipes = [];
 let frameCount = 0;
 let wingAngle = 0;
+const flapSound = new Howl({
+  src: ['assets/sounds/flap_sound.mp3'],
+  volume: 0.6
+});
 
 // Game Settings with theme and per-difficulty scores
 const gameSettings = {
@@ -32,7 +36,10 @@ const gameSettings = {
   theme: 'day',
   birdColor: 'yellow-solid'
 };
-
+const scoreSound = new Howl({
+  src: ['assets/sounds/score_sound.mp3'],
+  volume: 0.6
+});
 // Flight feel is tuned per difficulty:
 //  - flapPower:    how much lift one tap gives (smaller = gentler, more controlled hops)
 //  - gravity:      how hard the bird is pulled down
@@ -53,6 +60,7 @@ const difficultySettings = {
 // Single entry point for flapping so keyboard, mouse and touch all feel identical.
 const flap = () => {
   velocity = flapPower;
+  flapSound.play();
 };
 
 // Per-difficulty highscores
@@ -1139,10 +1147,11 @@ const updateGame = () => {
     pipe.x -= gameSpeed;
     
     // Scoring
-    if (!pipe.scored && pipe.x + pipeWidth < birdX) {
-      pipe.scored = true;
-      score++;
-    }
+   if (!pipe.scored && pipe.x + pipeWidth < birdX) {
+  pipe.scored = true;
+  score++;
+  scoreSound.play();
+}
     
     return pipe.x + pipeWidth > 0;
   });
