@@ -25,21 +25,178 @@ let score = 0;
 let pipes = [];
 let frameCount = 0;
 let wingAngle = 0;
-const flapSound = new Howl({
-  src: ['assets/sounds/flap_sound.mp3'],
-  volume: 0.6
-});
-
 // Game Settings with theme and per-difficulty scores
 const gameSettings = {
   difficulty: 'normal',
   theme: 'day',
   birdColor: 'yellow-solid'
 };
-const scoreSound = new Howl({
-  src: ['assets/sounds/score_sound.mp3'],
-  volume: 0.6
-});
+
+// ===========================================================================
+// AUDIO
+//
+// Every Howl in the game is defined here so there is one place to look when
+// adding or swapping a sound. Sound effects are one-shots; music tracks loop
+// and are managed by the music controller further down.
+// ===========================================================================
+
+// Music and sound effects are gated independently: toggling one never touches
+// the other. Stored under their own localStorage keys, alongside the existing
+// theme and highscore keys.
+const AUDIO_KEYS = {
+  music: 'flappyBirdMusicEnabled',
+  sfx: 'flappyBirdSfxEnabled'
+};
+
+// Anything other than an explicit 'false' means on, so a first-time player
+// gets audio by default.
+const readAudioPref = (key) => localStorage.getItem(key) !== 'false';
+
+const audioSettings = {
+  musicEnabled: readAudioPref(AUDIO_KEYS.music),
+  sfxEnabled: readAudioPref(AUDIO_KEYS.sfx)
+};
+
+const SFX = {
+  flap: new Howl({
+    src: ['assets/sounds/flap_sound.mp3'],
+    volume: 0.6
+  }),
+  score: new Howl({
+    src: ['assets/sounds/score_sound.mp3'],
+    volume: 0.6
+  }),
+  // Impact when the bird hits a pipe or the ground
+  collision: new Howl({
+    src: ['assets/sounds/collision.mp3'],
+    volume: 0.7
+  }),
+  // Descending minor phrase as the run ends
+  gameOver: new Howl({
+    src: ['assets/sounds/game_over.mp3'],
+    volume: 0.55
+  }),
+  // Whoosh and pop as the score card appears
+  scoreCard: new Howl({
+    src: ['assets/sounds/score_card.mp3'],
+    volume: 0.5
+  }),
+  // Short tick for any button or menu interaction
+  uiClick: new Howl({
+    src: ['assets/sounds/ui_click.mp3'],
+    volume: 0.45
+  })
+};
+
+// Play a one-shot sound effect. Every effect goes through here, so the sound
+// effects toggle only needs to be checked in one place.
+const playSfx = (name) => {
+  if (!audioSettings.sfxEnabled) return;
+  const sound = SFX[name];
+  if (sound) sound.play();
+};
+
+// Backwards-compatible aliases for the original two sounds.
+const flapSound = SFX.flap;
+const scoreSound = SFX.score;
+
+// --- Background music -------------------------------------------------------
+// Three looping tracks: one for the home screen and one for each theme during
+// play. Volumes are the target level a track fades up to.
+
+const MUSIC_VOLUME = 0.35;
+const MUSIC_FADE_MS = 700;
+
+const MUSIC = {
+  home: new Howl({
+    src: ['assets/music/music_home.mp3'],
+    loop: true,
+    volume: 0
+  }),
+  day: new Howl({
+    src: ['assets/music/music_day.mp3'],
+    loop: true,
+    volume: 0
+  }),
+  night: new Howl({
+    src: ['assets/music/music_night.mp3'],
+    loop: true,
+    volume: 0
+  })
+};
+
+// Which track should be playing right now, so repeated calls are no-ops rather
+// than restarting the same track from the top.
+let currentMusic = null;
+
+// Fade a track out and stop it once silent. Stopping immediately would cut the
+// audio off abruptly, which is what the crossfade exists to avoid.
+const fadeOutAndStop = (track) => {
+  if (!track || !track.playing()) return;
+  const from = track.volume();
+  track.fade(from, 0, MUSIC_FADE_MS);
+  setTimeout(() => {
+    // Guard against the track having been restarted during the fade
+    if (track.volume() === 0) track.stop();
+  }, MUSIC_FADE_MS + 50);
+};
+
+// Crossfade to the named track ('home' | 'day' | 'night'), or to silence when
+// passed null.
+const playMusicFor = (key) => {
+  const next = key ? MUSIC[key] : null;
+
+  if (currentMusic === key && next && next.playing()) return;
+  currentMusic = key;
+
+  // Fade down anything else that is still audible
+  Object.entries(MUSIC).forEach(([name, track]) => {
+    if (track !== next) fadeOutAndStop(track);
+  });
+
+  if (!next) return;
+  if (!audioSettings.musicEnabled) return;
+
+  if (!next.playing()) {
+    next.volume(0);
+    next.play();
+  }
+  next.fade(next.volume(), MUSIC_VOLUME, MUSIC_FADE_MS);
+};
+
+// The track appropriate to the current screen and theme.
+const musicKeyForState = () => {
+  if (gameState === 'playing') return gameSettings.theme === 'night' ? 'night' : 'day';
+  return 'home';
+};
+
+const stopMusic = () => {
+  currentMusic = null;
+  Object.values(MUSIC).forEach(fadeOutAndStop);
+};
+
+// --- Audio settings toggles -------------------------------------------------
+
+const setMusicEnabled = (enabled) => {
+  audioSettings.musicEnabled = enabled;
+  localStorage.setItem(AUDIO_KEYS.music, String(enabled));
+
+  // Applied immediately: no reload, and no effect on sound effects.
+  if (enabled) {
+    const key = currentMusic || musicKeyForState();
+    currentMusic = null;      // force playMusicFor to act rather than no-op
+    playMusicFor(key);
+  } else {
+    Object.values(MUSIC).forEach(fadeOutAndStop);
+  }
+};
+
+const setSfxEnabled = (enabled) => {
+  audioSettings.sfxEnabled = enabled;
+  localStorage.setItem(AUDIO_KEYS.sfx, String(enabled));
+  // Nothing else to do: playSfx checks the flag on every call, and music is
+  // deliberately left alone.
+};
 // Flight feel is tuned per difficulty:
 //  - flapPower:    how much lift one tap gives (smaller = gentler, more controlled hops)
 //  - gravity:      how hard the bird is pulled down
@@ -60,7 +217,7 @@ const difficultySettings = {
 // Single entry point for flapping so keyboard, mouse and touch all feel identical.
 const flap = () => {
   velocity = flapPower;
-  flapSound.play();
+  playSfx('flap');
 };
 
 // Per-difficulty highscores
@@ -155,6 +312,12 @@ const loadSettings = () => {
   // Update UI
   document.querySelector(`input[name="difficulty"][value="${gameSettings.difficulty}"]`).checked = true;
   document.querySelector(`input[name="birdColor"][value="${gameSettings.birdColor}"]`).checked = true;
+
+  // Reflect the stored audio preferences in the toggles
+  const musicToggle = document.getElementById('musicToggle');
+  const sfxToggle = document.getElementById('sfxToggle');
+  if (musicToggle) musicToggle.checked = audioSettings.musicEnabled;
+  if (sfxToggle) sfxToggle.checked = audioSettings.sfxEnabled;
 };
 
 const saveSettings = () => {
@@ -1150,7 +1313,7 @@ const updateGame = () => {
    if (!pipe.scored && pipe.x + pipeWidth < birdX) {
   pipe.scored = true;
   score++;
-  scoreSound.play();
+  playSfx('score');
 }
     
     return pipe.x + pipeWidth > 0;
@@ -1208,9 +1371,18 @@ const endGame = () => {
   // guard the game-over modal and confetti could fire twice.
   if (gameState !== 'playing') return;
   gameState = 'gameOver';
+
+  // Fade the gameplay track out so the game-over phrase is not competing
+  // with it, rather than letting the music cut dead.
+  playMusicFor(null);
+
+  // Impact first, then the game-over phrase once the hit has registered.
+  playSfx('collision');
+  setTimeout(() => playSfx('gameOver'), 260);
+
   const currentHighScore = getHighScore(gameSettings.difficulty);
   const isNewHighScore = score > currentHighScore;
-  
+
   if (isNewHighScore) {
     setHighScore(gameSettings.difficulty, score);
     createConfetti();
@@ -1236,7 +1408,10 @@ const showGameOverModal = (isNewHighScore) => {
 
   document.getElementById('gameOverModal').classList.remove('hidden');
   document.getElementById('modalOverlay').classList.remove('hidden');
-  
+
+  // Whoosh and pop timed to the card appearing on screen
+  playSfx('scoreCard');
+
   if (isNewHighScore) {
     confettiCanvas.style.display = 'block';
   }
@@ -1308,6 +1483,7 @@ const hideSettingsModal = () => {
 // Show Home Screen
 const showHomescreen = () => {
   gameState = 'home';
+  playMusicFor('home');
   document.getElementById('homescreen').classList.add('active');
   document.getElementById('gamescreen').classList.remove('active');
   drawHomescreen();
@@ -1319,6 +1495,7 @@ const showGamescreen = () => {
   document.getElementById('gamescreen').classList.add('active');
   gameState = 'playing';
   initGame();
+  playMusicFor(musicKeyForState());
 };
 
 // Update HUD
@@ -1328,6 +1505,16 @@ const updateHUD = () => {
 };
 
 // Event Listeners
+
+// One delegated listener gives every button a click tick, including any button
+// added later, instead of repeating a play call inside each handler. Radio
+// controls are handled by their own change events below: a label-wrapped radio
+// fires click twice (once for the label, once for the synthesised input click),
+// which would double up the sound.
+document.addEventListener('click', (e) => {
+  if (e.target.closest('button')) playSfx('uiClick');
+});
+
 document.getElementById('playBtn').addEventListener('click', () => {
   showGamescreen();
 });
@@ -1362,6 +1549,7 @@ document.getElementById('homeBtn').addEventListener('click', () => {
 document.querySelectorAll('input[name="difficulty"]').forEach(input => {
   input.addEventListener('change', (e) => {
     gameSettings.difficulty = e.target.value;
+    playSfx('uiClick');
     updateHUD();
   });
 });
@@ -1369,6 +1557,8 @@ document.querySelectorAll('input[name="difficulty"]').forEach(input => {
 document.querySelectorAll('input[name="theme"]').forEach(input => {
   input.addEventListener('change', (e) => {
     setTheme(e.target.value);
+    playSfx('uiClick');
+    playMusicFor(musicKeyForState());
     drawHomescreen();
   });
 });
@@ -1376,8 +1566,29 @@ document.querySelectorAll('input[name="theme"]').forEach(input => {
 document.querySelectorAll('input[name="birdColor"]').forEach(input => {
   input.addEventListener('change', (e) => {
     gameSettings.birdColor = e.target.value;
+    playSfx('uiClick');
   });
 });
+
+// Audio toggles. Each one writes its own key and touches only its own domain,
+// so switching music off leaves sound effects untouched and vice versa.
+const musicToggleEl = document.getElementById('musicToggle');
+if (musicToggleEl) {
+  musicToggleEl.addEventListener('change', (e) => {
+    setMusicEnabled(e.target.checked);
+    // The tick confirms the interaction, and is itself silent when effects are
+    // off, which is the correct behaviour.
+    playSfx('uiClick');
+  });
+}
+
+const sfxToggleEl = document.getElementById('sfxToggle');
+if (sfxToggleEl) {
+  sfxToggleEl.addEventListener('change', (e) => {
+    setSfxEnabled(e.target.checked);
+    playSfx('uiClick');
+  });
+}
 
 // Keyboard Controls
 document.addEventListener('keydown', (e) => {
@@ -1405,9 +1616,21 @@ gameCanvas.addEventListener('pointerdown', (e) => {
 
 homeCanvas.addEventListener('click', () => {
   if (gameState === 'home') {
+    playSfx('uiClick');
     showSettingsModal();
   }
 });
+
+// Browsers refuse to start audio before the user has interacted with the page,
+// so the home track cannot simply be started on load. Kick it off on the first
+// interaction instead, then remove the listeners.
+const startMusicOnFirstInteraction = () => {
+  playMusicFor(musicKeyForState());
+  document.removeEventListener('pointerdown', startMusicOnFirstInteraction);
+  document.removeEventListener('keydown', startMusicOnFirstInteraction);
+};
+document.addEventListener('pointerdown', startMusicOnFirstInteraction);
+document.addEventListener('keydown', startMusicOnFirstInteraction);
 
 // Initialize
 loadSettings();
