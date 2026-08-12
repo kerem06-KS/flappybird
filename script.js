@@ -166,188 +166,594 @@ const windowNoise = (a, b, c) => {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 
+// ---------------------------------------------------------------------------
+// City skyline
+//
+// The layout is generated once and cached. Every property of every building is
+// derived from the deterministic hash above, never Math.random(), so the
+// skyline is identical on every frame and cannot shimmer. Two layers scroll at
+// different speeds for depth; all drawing coordinates are rounded to whole
+// pixels so the windows stay crisp instead of crawling as they scroll.
+// ---------------------------------------------------------------------------
+
+const ROOF_STYLES = ['flat', 'parapet', 'stepped', 'antenna', 'watertower', 'spire'];
+const WINDOW_STYLES = ['grid', 'bands', 'slits'];
+
+// Build one horizontal strip of buildings wide enough to tile seamlessly.
+const buildCityLayer = (seed, cfg, targetWidth) => {
+  const buildings = [];
+  let x = 0;
+  let i = 0;
+  while (x < targetWidth) {
+    const r = (n) => windowNoise(seed, i, n);
+    const w = Math.round(cfg.minW + r(1) * (cfg.maxW - cfg.minW));
+    const h = Math.round(cfg.minH + r(2) * (cfg.maxH - cfg.minH));
+    buildings.push({
+      x,
+      w,
+      h,
+      roof: ROOF_STYLES[Math.floor(r(3) * ROOF_STYLES.length)],
+      windows: WINDOW_STYLES[Math.floor(r(4) * WINDOW_STYLES.length)],
+      // Per-building window grid so no two towers share a pattern
+      cols: 2 + Math.floor(r(5) * 3),
+      rowGap: 11 + Math.floor(r(6) * 6),
+      tint: r(7),          // slight per-building body colour variation
+      litSeed: i,          // stable seed for which windows are lit at night
+      beacon: r(8) > 0.5   // antenna beacon light
+    });
+    x += w + Math.round(cfg.minGap + r(9) * (cfg.maxGap - cfg.minGap));
+    i++;
+  }
+  return { buildings, stripWidth: x };
+};
+
+let cityCache = null;
+
+const getCity = () => {
+  if (cityCache && cityCache.h === gameCanvas.height && cityCache.w === gameCanvas.width) return cityCache;
+  const target = gameCanvas.width * 2;
+  cityCache = {
+    w: gameCanvas.width,
+    h: gameCanvas.height,
+    // Far layer: shorter, narrower, hazier, drifts slowly
+    far: buildCityLayer(11, { minW: 30, maxW: 58, minH: 60, maxH: 150, minGap: 4, maxGap: 14 }, target),
+    // Near layer: the dominant skyline
+    near: buildCityLayer(29, { minW: 44, maxW: 88, minH: 105, maxH: 235, minGap: 8, maxGap: 22 }, target)
+  };
+  return cityCache;
+};
+
+// Mix two hex colours; used to tint each building slightly differently.
+const mixHex = (a, b, t) => {
+  const pa = [1, 3, 5].map(i => parseInt(a.substr(i, 2), 16));
+  const pb = [1, 3, 5].map(i => parseInt(b.substr(i, 2), 16));
+  const c = pa.map((v, i) => Math.round(v + (pb[i] - v) * t));
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+};
+
+// Windows for one building, in whichever grid style it was assigned.
+const drawBuildingWindows = (ctx, b, bx, by, night) => {
+  const pad = 6;
+  const litColors = ['#ffe9a3', '#ffd782', '#fff3c4', '#ffc76b'];
+  const darkGlass = night ? '#12172b' : '#c8cdd8';
+
+  if (b.windows === 'bands') {
+    // Continuous horizontal glazing, modern office block
+    for (let row = 0, wy = by + pad; wy < by + b.h - pad - 4; row++, wy += b.rowGap) {
+      const lit = night && windowNoise(b.litSeed, row, 0) > 0.45;
+      ctx.fillStyle = lit ? litColors[Math.floor(windowNoise(b.litSeed, row, 1) * litColors.length)] : darkGlass;
+      ctx.globalAlpha = lit ? 0.9 : (night ? 0.9 : 0.75);
+      ctx.fillRect(Math.round(bx + pad), Math.round(wy), Math.round(b.w - pad * 2), 4);
+    }
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  const isSlit = b.windows === 'slits';
+  const cols = isSlit ? Math.max(2, b.cols + 1) : b.cols;
+  const ww = isSlit ? 3 : Math.max(4, Math.floor((b.w - pad * 2) / cols) - 4);
+  const wh = isSlit ? Math.max(8, b.rowGap - 4) : 6;
+  const stepX = (b.w - pad * 2) / cols;
+
+  for (let row = 0, wy = by + pad; wy < by + b.h - pad - wh; row++, wy += b.rowGap) {
+    for (let col = 0; col < cols; col++) {
+      const wx = bx + pad + col * stepX + (stepX - ww) / 2;
+      const n = windowNoise(b.litSeed, row, col);
+      const lit = night && n > 0.42;
+      if (lit) {
+        // Soft halo instead of a canvas shadow, which used to bleed onto
+        // everything drawn afterwards.
+        ctx.fillStyle = 'rgba(255, 224, 130, 0.16)';
+        ctx.fillRect(Math.round(wx - 2), Math.round(wy - 2), Math.round(ww + 4), Math.round(wh + 4));
+        ctx.fillStyle = litColors[Math.floor(n * 997) % litColors.length];
+      } else {
+        ctx.fillStyle = darkGlass;
+        ctx.globalAlpha = night ? 1 : 0.7;
+      }
+      ctx.fillRect(Math.round(wx), Math.round(wy), Math.round(ww), Math.round(wh));
+      ctx.globalAlpha = 1;
+    }
+  }
+};
+
+// One building: body, roof treatment, windows.
+const drawBuilding = (ctx, b, offsetX, groundY, night, layer, canvasW) => {
+  const bx = Math.round(b.x - offsetX);
+  const by = Math.round(groundY - b.h);
+  if (bx > canvasW + 40 || bx + b.w < -40) return;
+
+  const base = night
+    ? (layer === 'far' ? '#161b30' : '#0e1220')
+    : (layer === 'far' ? '#aab4c6' : '#8d97ab');
+  const alt = night
+    ? (layer === 'far' ? '#1d2340' : '#151a2c')
+    : (layer === 'far' ? '#b9c2d1' : '#9aa4b6');
+
+  const body = mixHex(base, alt, b.tint);
+
+  // Body with a vertical face shade so towers aren't flat
+  const g = ctx.createLinearGradient(bx, 0, bx + b.w, 0);
+  g.addColorStop(0, body);
+  g.addColorStop(0.75, body);
+  g.addColorStop(1, night ? '#080b14' : '#788494');
+  ctx.fillStyle = g;
+  ctx.fillRect(bx, by, b.w, b.h);
+
+  // Roof treatments
+  ctx.fillStyle = night ? '#0a0e1a' : '#6f7b8f';
+  if (b.roof === 'parapet') {
+    ctx.fillRect(bx - 2, by - 4, b.w + 4, 4);
+  } else if (b.roof === 'stepped') {
+    const w2 = Math.round(b.w * 0.66), h2 = 14;
+    ctx.fillStyle = body;
+    ctx.fillRect(bx + (b.w - w2) / 2, by - h2, w2, h2);
+    const w3 = Math.round(b.w * 0.36), h3 = 12;
+    ctx.fillRect(bx + (b.w - w3) / 2, by - h2 - h3, w3, h3);
+    ctx.fillStyle = night ? '#0a0e1a' : '#6f7b8f';
+    ctx.fillRect(bx + (b.w - w3) / 2, by - h2 - h3 - 3, w3, 3);
+  } else if (b.roof === 'antenna') {
+    const mx = Math.round(bx + b.w / 2);
+    ctx.fillRect(bx - 2, by - 3, b.w + 4, 3);
+    ctx.fillRect(mx - 1, by - 26, 2, 26);
+    if (b.beacon) {
+      ctx.fillStyle = night ? 'rgba(255, 70, 70, 0.35)' : 'rgba(200, 60, 60, 0.25)';
+      ctx.beginPath(); ctx.arc(mx, by - 27, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = night ? '#ff5252' : '#c0392b';
+      ctx.beginPath(); ctx.arc(mx, by - 27, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (b.roof === 'watertower') {
+    const mx = Math.round(bx + b.w / 2);
+    ctx.fillRect(bx - 2, by - 3, b.w + 4, 3);
+    ctx.fillRect(mx - 8, by - 10, 2, 8);
+    ctx.fillRect(mx + 6, by - 10, 2, 8);
+    ctx.fillRect(mx - 9, by - 20, 18, 10);
+    ctx.beginPath();
+    ctx.moveTo(mx - 9, by - 20); ctx.lineTo(mx, by - 26); ctx.lineTo(mx + 9, by - 20);
+    ctx.closePath(); ctx.fill();
+  } else if (b.roof === 'spire') {
+    const mx = Math.round(bx + b.w / 2);
+    ctx.beginPath();
+    ctx.moveTo(bx + b.w * 0.25, by); ctx.lineTo(mx, by - 22); ctx.lineTo(bx + b.w * 0.75, by);
+    ctx.closePath(); ctx.fill();
+  }
+
+  drawBuildingWindows(ctx, b, bx, by, night);
+
+  // Vertical edge shadow to separate neighbours
+  ctx.fillStyle = night ? 'rgba(0, 0, 0, 0.45)' : 'rgba(0, 0, 0, 0.13)';
+  ctx.fillRect(bx + b.w - 3, by, 3, b.h);
+};
+
+// Shared skyline renderer. Takes the target context so the game canvas and the
+// home screen can draw the same city instead of maintaining two separate
+// versions of it.
+const drawSkyline = (ctx, W, H, groundHeight, night, scrollFrames) => {
+  const groundY = H - groundHeight;
+
+  // Sky gradient
+  const gradient = ctx.createLinearGradient(0, 0, 0, H);
+  if (night) {
+    gradient.addColorStop(0, '#0b1026');
+    gradient.addColorStop(0.55, '#1a1f3a');
+    gradient.addColorStop(1, '#39304e');
+  } else {
+    gradient.addColorStop(0, '#4fb3d9');
+    gradient.addColorStop(0.55, '#70c5ce');
+    gradient.addColorStop(1, '#b8e6ee');
+  }
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+
+  if (night) {
+    // Static star field and moon. Positions come from the hash, so nothing moves.
+    for (let s = 0; s < 70; s++) {
+      const sx = Math.round(windowNoise(101, s, 0) * W);
+      const sy = Math.round(windowNoise(101, s, 1) * (H * 0.55));
+      const a = 0.25 + windowNoise(101, s, 2) * 0.6;
+      ctx.fillStyle = `rgba(255, 255, 255, ${a.toFixed(2)})`;
+      ctx.fillRect(sx, sy, windowNoise(101, s, 3) > 0.85 ? 2 : 1, windowNoise(101, s, 3) > 0.85 ? 2 : 1);
+    }
+    const mx = W - 88, my = 84;
+    ctx.fillStyle = 'rgba(255, 250, 220, 0.10)';
+    ctx.beginPath(); ctx.arc(mx, my, 38, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f6f2d8';
+    ctx.beginPath(); ctx.arc(mx, my, 24, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(190, 186, 160, 0.55)';
+    ctx.beginPath(); ctx.arc(mx - 9, my - 7, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + 8, my + 8, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + 7, my - 12, 3.5, 0, Math.PI * 2); ctx.fill();
+  } else {
+    // Soft clouds, also fixed in place
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    const puff = (cx, cy, s) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 16 * s, 0, Math.PI * 2);
+      ctx.arc(cx + 18 * s, cy + 4 * s, 12 * s, 0, Math.PI * 2);
+      ctx.arc(cx - 18 * s, cy + 5 * s, 11 * s, 0, Math.PI * 2);
+      ctx.arc(cx + 4 * s, cy - 10 * s, 12 * s, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    puff(90, 90, 1); puff(330, 60, 0.8); puff(240, 150, 0.6);
+  }
+
+  const city = getCity();
+  // Parallax: far layer creeps, near layer drifts. Both are far slower than the
+  // pipes, and offsets are whole pixels so nothing shimmers.
+  const farOffset = Math.round(scrollFrames * 0.10) % city.far.stripWidth;
+  const nearOffset = Math.round(scrollFrames * 0.28) % city.near.stripWidth;
+
+  for (let rep = 0; rep <= 1; rep++) {
+    city.far.buildings.forEach(b =>
+      drawBuilding(ctx, b, farOffset - rep * city.far.stripWidth, groundY - 26, night, 'far', W));
+  }
+  // Haze over the far layer pushes it back visually
+  ctx.fillStyle = night ? 'rgba(11, 16, 38, 0.45)' : 'rgba(150, 205, 220, 0.42)';
+  ctx.fillRect(0, 0, W, groundY);
+
+  for (let rep = 0; rep <= 1; rep++) {
+    city.near.buildings.forEach(b =>
+      drawBuilding(ctx, b, nearOffset - rep * city.near.stripWidth, groundY, night, 'near', W));
+  }
+
+  ctx.restore();
+
+  // Make sure no shadow or alpha state leaks into the pipes, bird or ground.
+  ctx.globalAlpha = 1;
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+};
+
 // City Background Drawing
 const drawCityBackground = () => {
-  // Sky gradient
-  const gradient = gameCtx.createLinearGradient(0, 0, 0, gameCanvas.height);
-  if (gameSettings.theme === 'night') {
-    gradient.addColorStop(0, '#1a1f3a');
-    gradient.addColorStop(1, '#2d2e4a');
-  } else {
-    gradient.addColorStop(0, '#70c5ce');
-    gradient.addColorStop(1, '#90d5e0');
+  drawSkyline(gameCtx, gameCanvas.width, gameCanvas.height, 80,
+              gameSettings.theme === 'night', frameCount);
+};
+
+// ---------------------------------------------------------------------------
+// Bird and owl models
+//
+// Both are drawn as layered vector art in a 36x36 local box: tail and far wing
+// behind the body, then body, belly, head, face, beak, and the near wing on top.
+// That back-to-front order is what gives them volume instead of reading as a
+// stack of circles.
+// ---------------------------------------------------------------------------
+
+// Every shade is derived from a single base hue per colour option.
+const BIRD_BASES = {
+  yellow: '#ffce1f',
+  red:    '#ef4b4b',
+  blue:   '#3d9be9',
+  green:  '#4fb050',
+  purple: '#a259cc',
+  pink:   '#ff5f9e'
+};
+
+const birdPalette = (name) => {
+  const base = BIRD_BASES[name] || BIRD_BASES.yellow;
+  return {
+    base,
+    light:   mixHex(base, '#ffffff', 0.36),
+    lighter: mixHex(base, '#ffffff', 0.64),
+    dark:    mixHex(base, '#000000', 0.26),
+    darker:  mixHex(base, '#000000', 0.46)
+  };
+};
+
+// Wing beat. Climbing birds beat faster, so the rate tracks vertical speed.
+const wingBeat = () => {
+  const rate = 0.18 + Math.max(0, -velocity) * 0.02;
+  return Math.sin(frameCount * rate);
+};
+
+// A single feather: a leaf shape tapering to a point, drawn pointing left from
+// the origin then rotated into place. Filled shapes read as feathers; thin
+// stroked slivers just look like straw.
+const primaryFeather = (angle, len, wid) => {
+  gameCtx.save();
+  gameCtx.rotate(angle);
+  gameCtx.beginPath();
+  gameCtx.moveTo(1, 0);
+  gameCtx.quadraticCurveTo(-len * 0.55, -wid, -len, -wid * 0.15);
+  gameCtx.quadraticCurveTo(-len * 0.5, wid * 0.95, 1, wid * 0.5);
+  gameCtx.closePath();
+  gameCtx.fill();
+  gameCtx.restore();
+};
+
+// Songbird wing: a fan of primaries under a rounded covert.
+const drawBirdWing = (p, beat, near) => {
+  gameCtx.save();
+  // Sits mid-body: any higher and the feathers appear to sprout from the neck.
+  gameCtx.translate(15, 18);
+  gameCtx.rotate(beat * (near ? 0.55 : 0.4));
+  if (!near) gameCtx.scale(0.88, 0.88);
+
+  // Primaries fanned back and down
+  gameCtx.fillStyle = near ? p.dark : p.darker;
+  primaryFeather(0.08, 16, 3.4);
+  primaryFeather(0.42, 15, 3.6);
+  primaryFeather(0.78, 13, 3.4);
+
+  // Secondaries, slightly lighter, closer in
+  gameCtx.fillStyle = near ? p.base : p.dark;
+  primaryFeather(0.30, 10, 4.2);
+
+  // Covert: rounded shoulder cap over the feather roots. Kept a shade darker
+  // than the body so the wing reads as a separate layer rather than blending in
+  // and leaving the primaries looking detached.
+  gameCtx.fillStyle = near ? p.dark : p.darker;
+  gameCtx.beginPath();
+  gameCtx.ellipse(-3, 2, 8, 5.6, 0.28, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // Covert highlight
+  gameCtx.fillStyle = near ? p.base : p.dark;
+  gameCtx.beginPath();
+  gameCtx.ellipse(-2.5, 0.8, 5.6, 3.6, 0.28, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  gameCtx.restore();
+};
+
+// Owl wing: broader and blunter than the songbird's, with feather barring.
+const drawOwlWing = (p, beat, near) => {
+  gameCtx.save();
+  // Set low and outboard so the wing never covers the facial disc or beak.
+  gameCtx.translate(9, 22);
+  gameCtx.rotate(beat * (near ? 0.42 : 0.32));
+  if (!near) gameCtx.scale(0.9, 0.9);
+
+  // Broad, blunt primaries
+  gameCtx.fillStyle = near ? p.dark : p.darker;
+  primaryFeather(-0.10, 13, 4.6);
+  primaryFeather(0.22, 14, 4.8);
+  primaryFeather(0.56, 12, 4.4);
+
+  // Barring across the primaries
+  gameCtx.strokeStyle = 'rgba(0, 0, 0, 0.28)';
+  gameCtx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(-3 - i * 3.4, -1.5);
+    gameCtx.quadraticCurveTo(-5 - i * 3.4, 2.5, -3 - i * 3.4, 6.5);
+    gameCtx.stroke();
   }
-  gameCtx.fillStyle = gradient;
-  gameCtx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
 
-  // Draw buildings (static, behind game elements)
-  const buildingWidth = 70;
-  const buildingSpacing = 90;
-  const maxBuildingHeight = 200;
-  
-  for (let i = 0; i < (gameCanvas.width / buildingSpacing) + 2; i++) {
-    const x = i * buildingSpacing - 30;
-    const height = 100 + Math.sin(i * 0.7) * 60;
-    const y = gameCanvas.height - height - 80;
-    
-    // Building shadow (for depth)
-    if (gameSettings.theme === 'night') {
-      gameCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    } else {
-      gameCtx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-    }
-    gameCtx.fillRect(x + 2, y + 2, buildingWidth, height);
-    
-    // Building body
-    if (gameSettings.theme === 'night') {
-      gameCtx.fillStyle = '#0f1419';
-    } else {
-      gameCtx.fillStyle = '#9a9aaa';
-    }
-    gameCtx.fillRect(x, y, buildingWidth, height);
-    
-    // Building outline
-    gameCtx.strokeStyle = gameSettings.theme === 'night' ? '#333' : '#7a7a8a';
-    gameCtx.lineWidth = 2;
-    gameCtx.strokeRect(x, y, buildingWidth, height);
+  // Covert
+  gameCtx.fillStyle = near ? p.base : p.dark;
+  gameCtx.beginPath();
+  gameCtx.ellipse(-2, 0, 7.4, 5.4, 0.2, 0, Math.PI * 2);
+  gameCtx.fill();
 
-    // Windows
-    const windowSize = 6;
-    const windowSpacing = 12;
-    const windowPadding = 6;
-    const isNight = gameSettings.theme === 'night';
+  gameCtx.fillStyle = near ? p.light : p.base;
+  gameCtx.beginPath();
+  gameCtx.ellipse(-1.5, -0.8, 5, 3.4, 0.2, 0, Math.PI * 2);
+  gameCtx.fill();
 
-    for (let row = 0; row < Math.floor((height - windowPadding * 2) / windowSpacing); row++) {
-      for (let col = 0; col < 2; col++) {
-        const wx = x + windowPadding + col * (buildingWidth / 2 - windowPadding);
-        const wy = y + windowPadding + row * windowSpacing;
+  gameCtx.restore();
+};
 
-        // Lit or dark is decided once per window position and never changes,
-        // so the skyline stays perfectly still frame to frame.
-        const lit = isNight && windowNoise(i, row, col) > 0.4;
+// ---------------------------------------------------------------------------
+// Colour pattern overlays
+//
+// The "-stripe" half of every colour option used to change nothing but a wing
+// tint on the day bird, and the owl discarded the pattern from the setting
+// string entirely, so "Blue" and "Blue Stripe" rendered identically. Patterns
+// are now drawn as real markings clipped to the character's silhouette.
+// ---------------------------------------------------------------------------
 
-        if (lit) {
-          // Glow drawn as a soft halo rather than a canvas shadow. The old code
-          // set shadowBlur after the fill and never cleared it, so the blur bled
-          // onto everything drawn afterwards.
-          gameCtx.fillStyle = 'rgba(255, 235, 59, 0.18)';
-          gameCtx.fillRect(wx - 2, wy - 2, windowSize + 4, windowSize + 4);
-          gameCtx.fillStyle = '#ffeb3b';
-        } else {
-          gameCtx.fillStyle = isNight ? '#1a1f3a' : '#d0d0d0';
-        }
-        gameCtx.fillRect(wx, wy, windowSize, windowSize);
-      }
-    }
+// Bold diagonal banding across the body and head of the songbird.
+const applyBirdPattern = (p, pattern) => {
+  if (pattern !== 'stripe') return;
+  gameCtx.save();
+  birdSilhouettePath();
+  gameCtx.clip();
+
+  gameCtx.fillStyle = p.darker;
+  gameCtx.globalAlpha = 0.75;
+  for (let i = -6; i < 44; i += 9) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(i, 2);
+    gameCtx.lineTo(i + 4.5, 2);
+    gameCtx.lineTo(i - 4.5, 36);
+    gameCtx.lineTo(i - 9, 36);
+    gameCtx.closePath();
+    gameCtx.fill();
   }
+  gameCtx.globalAlpha = 1;
+  gameCtx.restore();
+};
 
-  // Make sure no shadow state leaks into the pipes, bird or ground.
-  gameCtx.shadowColor = 'transparent';
-  gameCtx.shadowBlur = 0;
+// Horizontal feather barring across the owl's breast, as on a real barred owl.
+const applyOwlPattern = (p, pattern) => {
+  if (pattern !== 'stripe') return;
+  gameCtx.save();
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 21, 12.5, 12, 0, 0, Math.PI * 2);
+  gameCtx.clip();
+
+  gameCtx.strokeStyle = p.dark;
+  gameCtx.globalAlpha = 0.85;
+  gameCtx.lineWidth = 2;
+  for (let y = 12; y < 34; y += 4.5) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(4, y);
+    gameCtx.quadraticCurveTo(18, y + 3, 32, y);
+    gameCtx.stroke();
+  }
+  gameCtx.globalAlpha = 1;
+  gameCtx.restore();
+};
+
+// Body plus head as one region, used to clip pattern markings to the bird's
+// outline so stripes stop at the edge instead of spilling into the sky.
+const birdSilhouettePath = () => {
+  birdBodyPath();
+  gameCtx.moveTo(33.4, 13);
+  gameCtx.arc(25, 13, 8.4, 0, Math.PI * 2);
+};
+
+// Body outline, reused for filling and for clipping patterns to the body.
+const birdBodyPath = () => {
+  gameCtx.beginPath();
+  gameCtx.moveTo(5, 19);
+  gameCtx.bezierCurveTo(5, 9, 14, 5, 21, 7);      // back
+  gameCtx.bezierCurveTo(29, 9, 31, 16, 30, 21);   // shoulder to front
+  gameCtx.bezierCurveTo(29, 28, 20, 31, 13, 29);  // belly
+  gameCtx.bezierCurveTo(8, 27, 5, 24, 5, 19);     // back to tail
+  gameCtx.closePath();
 };
 
 // Draw Bird with Patterns
 const drawBirdWithPattern = () => {
   gameCtx.save();
   gameCtx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
-  
+
   // Rotation based on velocity, clamped both ways so the bird never spins vertical
   const angle = Math.max(-0.45, Math.min(velocity * 0.08, 0.5));
   gameCtx.rotate(angle);
   gameCtx.translate(-birdWidth / 2, -birdHeight / 2);
 
   const [color, pattern] = gameSettings.birdColor.split('-');
-  const colors = {
-    yellow: '#ffeb3b',
-    red: '#ff5252',
-    blue: '#2196f3',
-    green: '#4caf50',
-    purple: '#9c27b0',
-    pink: '#ff1493'
-  };
+  const p = birdPalette(color);
+  const beat = wingBeat();
+  wingAngle = beat * 0.3;
 
-  const baseColor = colors[color] || colors.yellow;
-
-  // Body (main oval)
-  gameCtx.fillStyle = baseColor;
-  gameCtx.beginPath();
-  gameCtx.ellipse(birdWidth / 2, birdHeight / 2, birdWidth / 2.2, birdHeight / 2.4, 0, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Wing animation
-  wingAngle = Math.sin(frameCount * 0.1) * 0.3;
-  
-  // Left Wing
-  const leftWingColor = pattern === 'stripe' ? 'rgba(0, 0, 0, 0.2)' : color === 'yellow' ? '#fdd835' : 'rgba(255, 255, 255, 0.3)';
-  gameCtx.fillStyle = leftWingColor;
+  // --- tail fan (behind everything) ---
   gameCtx.save();
-  gameCtx.translate(birdWidth / 2 - 8, birdHeight / 2 - 2);
-  gameCtx.rotate(wingAngle);
-  gameCtx.beginPath();
-  gameCtx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2);
-  gameCtx.fill();
+  gameCtx.translate(8, 20);
+  gameCtx.fillStyle = p.darker;
+  primaryFeather(-0.16, 12, 3.2);
+  primaryFeather(0.10, 13, 3.4);
+  gameCtx.fillStyle = p.dark;
+  primaryFeather(0.36, 12, 3.2);
   gameCtx.restore();
 
-  // Right Wing
-  gameCtx.save();
-  gameCtx.translate(birdWidth / 2 + 8, birdHeight / 2 - 2);
-  gameCtx.rotate(-wingAngle);
-  gameCtx.beginPath();
-  gameCtx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2);
+  // --- far wing ---
+  drawBirdWing(p, -beat, false);
+
+  // --- body ---
+  const bodyGrad = gameCtx.createLinearGradient(0, 4, 0, 32);
+  bodyGrad.addColorStop(0, p.light);
+  bodyGrad.addColorStop(0.55, p.base);
+  bodyGrad.addColorStop(1, p.dark);
+  gameCtx.fillStyle = bodyGrad;
+  birdBodyPath();
   gameCtx.fill();
+
+  // Belly
+  gameCtx.fillStyle = p.lighter;
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 24, 9, 6, -0.1, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // Feather scalloping across the back
+  gameCtx.save();
+  birdBodyPath();
+  gameCtx.clip();
+  gameCtx.strokeStyle = 'rgba(0, 0, 0, 0.10)';
+  gameCtx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    gameCtx.beginPath();
+    gameCtx.arc(14 + i * 6, 10 + i * 2, 6, Math.PI * 0.15, Math.PI * 0.85);
+    gameCtx.stroke();
+  }
   gameCtx.restore();
 
-  // Chest/Breast (lighter shade)
-  gameCtx.fillStyle = color === 'yellow' ? '#ffee58' : 'rgba(255, 255, 255, 0.2)';
+  // --- head ---
+  const headGrad = gameCtx.createRadialGradient(24, 10, 1, 25, 13, 11);
+  headGrad.addColorStop(0, p.light);
+  headGrad.addColorStop(1, p.base);
+  gameCtx.fillStyle = headGrad;
   gameCtx.beginPath();
-  gameCtx.ellipse(birdWidth / 2, birdHeight / 2 + 3, birdWidth / 2.8, birdHeight / 2.8, 0, 0, Math.PI * 2);
+  gameCtx.arc(25, 13, 8.4, 0, Math.PI * 2);
   gameCtx.fill();
 
-  // Eyes
-  // Left eye white
+  // Cheek
+  gameCtx.fillStyle = p.lighter;
+  gameCtx.beginPath();
+  gameCtx.ellipse(25, 16.5, 5, 3.4, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // Pattern markings, drawn after the head so they run across body and head
+  // together, but before the eye and beak so those stay clear.
+  applyBirdPattern(p, pattern);
+
+  // --- eye ---
   gameCtx.fillStyle = '#ffffff';
   gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 4, birdHeight / 2 - 6, 5, 0, Math.PI * 2);
+  gameCtx.arc(27.5, 11.5, 3.9, 0, Math.PI * 2);
   gameCtx.fill();
+  gameCtx.strokeStyle = 'rgba(0,0,0,0.18)';
+  gameCtx.lineWidth = 0.8;
+  gameCtx.stroke();
 
-  // Pupil (looking forward with slight animation)
-  gameCtx.fillStyle = '#000000';
-  const pupilOffset = Math.sin(frameCount * 0.05) * 1;
+  const look = Math.sin(frameCount * 0.05) * 0.6;
+  gameCtx.fillStyle = '#5a3b1a';
   gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 4 + pupilOffset, birdHeight / 2 - 6, 3, 0, Math.PI * 2);
+  gameCtx.arc(28.6 + look, 11.6, 2.4, 0, Math.PI * 2);
   gameCtx.fill();
-
-  // Eye shine
+  gameCtx.fillStyle = '#131313';
+  gameCtx.beginPath();
+  gameCtx.arc(28.9 + look, 11.6, 1.4, 0, Math.PI * 2);
+  gameCtx.fill();
   gameCtx.fillStyle = '#ffffff';
   gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 5 + pupilOffset, birdHeight / 2 - 7, 1.2, 0, Math.PI * 2);
+  gameCtx.arc(27.9 + look, 10.4, 1.1, 0, Math.PI * 2);
   gameCtx.fill();
 
-  // Beak
-  gameCtx.fillStyle = '#ff9800';
+  // Brow
+  gameCtx.strokeStyle = p.darker;
+  gameCtx.lineWidth = 1.6;
+  gameCtx.lineCap = 'round';
   gameCtx.beginPath();
-  gameCtx.moveTo(birdWidth / 2 + 8, birdHeight / 2 - 1);
-  gameCtx.lineTo(birdWidth / 2 + 14, birdHeight / 2 - 1);
-  gameCtx.lineTo(birdWidth / 2 + 12, birdHeight / 2 + 1);
+  gameCtx.arc(27.6, 11.4, 5.2, Math.PI * 1.15, Math.PI * 1.62);
+  gameCtx.stroke();
+
+  // --- beak: upper and lower mandible, slightly parted ---
+  const beakGrad = gameCtx.createLinearGradient(31, 12, 38, 17);
+  beakGrad.addColorStop(0, '#ffb02e');
+  beakGrad.addColorStop(1, '#e8760c');
+  gameCtx.fillStyle = beakGrad;
+  gameCtx.beginPath();
+  gameCtx.moveTo(31, 12.2);
+  gameCtx.quadraticCurveTo(37.5, 13.2, 38.5, 15.4);
+  gameCtx.quadraticCurveTo(35, 15.8, 31.5, 15.4);
   gameCtx.closePath();
   gameCtx.fill();
 
-  // Tail feathers
-  gameCtx.strokeStyle = color === 'yellow' ? '#fbc02d' : 'rgba(0, 0, 0, 0.2)';
-  gameCtx.lineWidth = 2;
-  gameCtx.lineCap = 'round';
-  
-  // Tail feather 1
+  gameCtx.fillStyle = '#d2660a';
   gameCtx.beginPath();
-  gameCtx.moveTo(birdWidth / 2 - 12, birdHeight / 2 + 8);
-  gameCtx.quadraticCurveTo(birdWidth / 2 - 18, birdHeight / 2 + 10, birdWidth / 2 - 20, birdHeight / 2 + 14);
-  gameCtx.stroke();
+  gameCtx.moveTo(31.4, 16.2);
+  gameCtx.quadraticCurveTo(35.4, 16.6, 37.4, 16.4);
+  gameCtx.quadraticCurveTo(34.6, 18.6, 31.6, 18);
+  gameCtx.closePath();
+  gameCtx.fill();
 
-  // Tail feather 2
-  gameCtx.beginPath();
-  gameCtx.moveTo(birdWidth / 2 - 13, birdHeight / 2 + 12);
-  gameCtx.quadraticCurveTo(birdWidth / 2 - 19, birdHeight / 2 + 15, birdWidth / 2 - 21, birdHeight / 2 + 20);
-  gameCtx.stroke();
+  // --- near wing on top ---
+  drawBirdWing(p, beat, true);
 
   gameCtx.restore();
 };
@@ -356,152 +762,308 @@ const drawBirdWithPattern = () => {
 const drawOwl = () => {
   gameCtx.save();
   gameCtx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
-  
+
   const angle = Math.max(-0.45, Math.min(velocity * 0.08, 0.5));
   gameCtx.rotate(angle);
   gameCtx.translate(-birdWidth / 2, -birdHeight / 2);
 
-  const [color] = gameSettings.birdColor.split('-');
-  const colors = {
-    yellow: '#c4a000',
-    red: '#8b0000',
-    blue: '#001f3f',
-    green: '#2d5016',
-    purple: '#4a0e4e',
-    pink: '#8b1a3a'
+  const [color, pattern] = gameSettings.birdColor.split('-');
+  // Owls wear a duskier version of the same hue so night plumage stays muted.
+  const bright = birdPalette(color);
+  const p = {
+    base:    mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#2a1e14', 0.42),
+    light:   mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#ffe6c0', 0.30),
+    lighter: mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#fff1d8', 0.60),
+    dark:    mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#150e08', 0.62),
+    darker:  mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#0b0705', 0.78)
   };
-  const baseColor = colors[color] || colors.yellow;
+  const beat = wingBeat();
+  wingAngle = beat * 0.3;
 
-  // Body
-  gameCtx.fillStyle = baseColor;
+  // --- tail ---
+  gameCtx.fillStyle = p.darker;
   gameCtx.beginPath();
-  gameCtx.ellipse(birdWidth / 2, birdHeight / 2 + 2, birdWidth / 2.2, birdHeight / 2.2, 0, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Wing flap
-  gameCtx.fillStyle = baseColor;
-  gameCtx.save();
-  gameCtx.translate(birdWidth / 2 - 8, birdHeight / 2 + 1);
-  gameCtx.rotate(wingAngle);
-  gameCtx.beginPath();
-  gameCtx.ellipse(0, 0, 10, 10, 0.2, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.restore();
-
-  gameCtx.save();
-  gameCtx.translate(birdWidth / 2 + 8, birdHeight / 2 + 1);
-  gameCtx.rotate(-wingAngle);
-  gameCtx.beginPath();
-  gameCtx.ellipse(0, 0, 10, 10, -0.2, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.restore();
-
-  // Head
-  gameCtx.fillStyle = baseColor;
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2, birdHeight / 2 - 4, 9, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Ear tufts
-  gameCtx.beginPath();
-  gameCtx.ellipse(birdWidth / 2 - 7, birdHeight / 2 - 12, 3, 7, -0.3, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.beginPath();
-  gameCtx.ellipse(birdWidth / 2 + 7, birdHeight / 2 - 12, 3, 7, 0.3, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Left eye
-  gameCtx.fillStyle = '#ffd700';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 - 4, birdHeight / 2 - 6, 5, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.fillStyle = '#000';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 - 4, birdHeight / 2 - 6, 2.5, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.fillStyle = '#fff';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 - 3, birdHeight / 2 - 7, 1.2, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Right eye
-  gameCtx.fillStyle = '#ffd700';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 4, birdHeight / 2 - 6, 5, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.fillStyle = '#000';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 4, birdHeight / 2 - 6, 2.5, 0, Math.PI * 2);
-  gameCtx.fill();
-  gameCtx.fillStyle = '#fff';
-  gameCtx.beginPath();
-  gameCtx.arc(birdWidth / 2 + 5, birdHeight / 2 - 7, 1.2, 0, Math.PI * 2);
-  gameCtx.fill();
-
-  // Beak
-  gameCtx.fillStyle = '#ff8c00';
-  gameCtx.beginPath();
-  gameCtx.moveTo(birdWidth / 2, birdHeight / 2 - 1);
-  gameCtx.lineTo(birdWidth / 2 + 4, birdHeight / 2 + 1);
-  gameCtx.lineTo(birdWidth / 2, birdHeight / 2 + 3);
+  gameCtx.moveTo(9, 22);
+  gameCtx.lineTo(-2, 22);
+  gameCtx.lineTo(-1, 28);
+  gameCtx.lineTo(10, 27);
   gameCtx.closePath();
   gameCtx.fill();
+  gameCtx.strokeStyle = 'rgba(0,0,0,0.35)';
+  gameCtx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(0 + i * 3, 22.5);
+    gameCtx.lineTo(1 + i * 3, 27.5);
+    gameCtx.stroke();
+  }
+
+  // --- far wing ---
+  drawOwlWing(p, -beat, false);
+
+  // --- body ---
+  const bodyGrad = gameCtx.createLinearGradient(0, 8, 0, 34);
+  bodyGrad.addColorStop(0, p.light);
+  bodyGrad.addColorStop(0.5, p.base);
+  bodyGrad.addColorStop(1, p.dark);
+  gameCtx.fillStyle = bodyGrad;
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 21, 12.5, 12, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // Breast
+  gameCtx.fillStyle = p.lighter;
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 24, 8.5, 8, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // Pattern overlay, clipped to the breast/body
+  applyOwlPattern(p, pattern);
+
+  // --- head: wide, slightly flattened ---
+  const headGrad = gameCtx.createLinearGradient(0, 2, 0, 20);
+  headGrad.addColorStop(0, p.light);
+  headGrad.addColorStop(1, p.base);
+  gameCtx.fillStyle = headGrad;
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 12, 11.5, 9.5, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // --- ear tufts ---
+  gameCtx.fillStyle = p.dark;
+  gameCtx.beginPath();
+  gameCtx.moveTo(9, 6);
+  gameCtx.quadraticCurveTo(6, -2, 12.5, 1.5);
+  gameCtx.quadraticCurveTo(13, 4, 12, 6.5);
+  gameCtx.closePath();
+  gameCtx.fill();
+  gameCtx.beginPath();
+  gameCtx.moveTo(27, 6);
+  gameCtx.quadraticCurveTo(30, -2, 23.5, 1.5);
+  gameCtx.quadraticCurveTo(23, 4, 24, 6.5);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  // --- facial disc: two overlapping discs forming the heart shape ---
+  gameCtx.fillStyle = p.lighter;
+  gameCtx.beginPath();
+  gameCtx.arc(13.4, 12.6, 6.6, 0, Math.PI * 2);
+  gameCtx.arc(22.6, 12.6, 6.6, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.strokeStyle = 'rgba(0,0,0,0.16)';
+  gameCtx.lineWidth = 1;
+  gameCtx.beginPath();
+  gameCtx.arc(13.4, 12.6, 6.6, Math.PI * 0.6, Math.PI * 1.9);
+  gameCtx.stroke();
+  gameCtx.beginPath();
+  gameCtx.arc(22.6, 12.6, 6.6, Math.PI * 1.1, Math.PI * 0.4);
+  gameCtx.stroke();
+
+  // --- eyes: large and forward facing ---
+  const blink = ((frameCount + 37) % 190) < 5;
+  [13.4, 22.6].forEach((ex, idx) => {
+    gameCtx.fillStyle = '#fdf3d8';
+    gameCtx.beginPath();
+    gameCtx.arc(ex, 12.4, 4.9, 0, Math.PI * 2);
+    gameCtx.fill();
+
+    if (blink) {
+      gameCtx.fillStyle = p.light;
+      gameCtx.beginPath();
+      gameCtx.arc(ex, 12.4, 5, 0, Math.PI * 2);
+      gameCtx.fill();
+      gameCtx.strokeStyle = p.darker;
+      gameCtx.lineWidth = 1.2;
+      gameCtx.beginPath();
+      gameCtx.moveTo(ex - 4.4, 12.4);
+      gameCtx.lineTo(ex + 4.4, 12.4);
+      gameCtx.stroke();
+      return;
+    }
+
+    // Amber iris
+    const iris = gameCtx.createRadialGradient(ex - 1, 11, 0.5, ex, 12.4, 4.4);
+    iris.addColorStop(0, '#ffd970');
+    iris.addColorStop(1, '#e08a12');
+    gameCtx.fillStyle = iris;
+    gameCtx.beginPath();
+    gameCtx.arc(ex, 12.4, 4.1, 0, Math.PI * 2);
+    gameCtx.fill();
+
+    const look = Math.sin(frameCount * 0.04) * 0.5;
+    gameCtx.fillStyle = '#0d0d0d';
+    gameCtx.beginPath();
+    gameCtx.arc(ex + look, 12.5, 2.5, 0, Math.PI * 2);
+    gameCtx.fill();
+    gameCtx.fillStyle = 'rgba(255,255,255,0.95)';
+    gameCtx.beginPath();
+    gameCtx.arc(ex + look - 1.1, 11.2, 1.15, 0, Math.PI * 2);
+    gameCtx.fill();
+    gameCtx.fillStyle = 'rgba(255,255,255,0.5)';
+    gameCtx.beginPath();
+    gameCtx.arc(ex + look + 1.3, 13.8, 0.6, 0, Math.PI * 2);
+    gameCtx.fill();
+  });
+
+  // --- hooked beak ---
+  gameCtx.fillStyle = '#e8a33c';
+  gameCtx.beginPath();
+  gameCtx.moveTo(16.4, 15.4);
+  gameCtx.lineTo(19.6, 15.4);
+  gameCtx.quadraticCurveTo(19.2, 20.4, 18, 21.2);
+  gameCtx.quadraticCurveTo(16.8, 20.4, 16.4, 15.4);
+  gameCtx.closePath();
+  gameCtx.fill();
+  gameCtx.fillStyle = 'rgba(0,0,0,0.22)';
+  gameCtx.beginPath();
+  gameCtx.moveTo(18, 15.4);
+  gameCtx.lineTo(19.6, 15.4);
+  gameCtx.quadraticCurveTo(19.2, 20.4, 18, 21.2);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  // --- talons tucked under ---
+  gameCtx.strokeStyle = '#d8a44e';
+  gameCtx.lineWidth = 1.6;
+  gameCtx.lineCap = 'round';
+  [15, 21].forEach(tx => {
+    gameCtx.beginPath();
+    gameCtx.moveTo(tx, 30.5);
+    gameCtx.lineTo(tx - 1.5, 33);
+    gameCtx.moveTo(tx, 30.5);
+    gameCtx.lineTo(tx + 1.5, 33);
+    gameCtx.stroke();
+  });
+
+  // --- near wing ---
+  drawOwlWing(p, beat, true);
 
   gameCtx.restore();
 };
 
 // Draw Pipes
 const drawPipes = () => {
-  const pipeBody = gameSettings.theme === 'night' ? '#1f6b1e' : '#2d9b2b';
-  const pipeEdge = gameSettings.theme === 'night' ? '#154a14' : '#238021';
+  const night = gameSettings.theme === 'night';
+
+  // Palette for the moulded-plastic look. The gradient across the width is what
+  // sells the cylinder; a flat fill always reads as a rectangle.
+  const pal = night
+    ? { lightest: '#4f8f3e', light: '#39762c', mid: '#256b1f', dark: '#14430f', outline: '#0c2a09' }
+    : { lightest: '#8fd96a', light: '#5cbf3f', mid: '#33a02c', dark: '#1d6b18', outline: '#12490f' };
+
+  // Horizontal gradient shared by body and rim: dark edge, bright highlight just
+  // off the left edge, mid tone through the middle, deep shadow on the right.
+  const shadeGradient = (x, w) => {
+    const g = gameCtx.createLinearGradient(x, 0, x + w, 0);
+    g.addColorStop(0,    pal.dark);
+    g.addColorStop(0.10, pal.light);
+    g.addColorStop(0.22, pal.lightest);
+    g.addColorStop(0.42, pal.mid);
+    g.addColorStop(0.78, pal.mid);
+    g.addColorStop(0.92, pal.dark);
+    g.addColorStop(1,    pal.outline);
+    return g;
+  };
+
+  const RIM_H = 26;      // height of the lip at the open end
+  const RIM_OVER = 6;    // how far the lip overhangs each side of the shaft
+
+  // The shaft: gradient body, subtle horizontal seams for texture, hard outline.
+  const drawShaft = (x, y, w, h) => {
+    if (h <= 0) return;
+    gameCtx.fillStyle = shadeGradient(x, w);
+    gameCtx.fillRect(x, y, w, h);
+
+    // Moulding seams every 26px so long runs of pipe aren't a blank slab.
+    gameCtx.strokeStyle = 'rgba(0, 0, 0, 0.07)';
+    gameCtx.lineWidth = 1;
+    for (let sy = y + 13; sy < y + h; sy += 26) {
+      gameCtx.beginPath();
+      gameCtx.moveTo(x + 3, sy + 0.5);
+      gameCtx.lineTo(x + w - 3, sy + 0.5);
+      gameCtx.stroke();
+    }
+
+    // Specular streak down the highlight band
+    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.13)';
+    gameCtx.fillRect(x + w * 0.17, y, w * 0.07, h);
+
+    gameCtx.strokeStyle = pal.outline;
+    gameCtx.lineWidth = 2;
+    gameCtx.strokeRect(x + 1, y - 1, w - 2, h + 2);
+  };
+
+  // The lip at the open end, drawn wider than the shaft so it reads as a collar.
+  const drawRim = (x, y, w) => {
+    const rx = x - RIM_OVER;
+    const rw = w + RIM_OVER * 2;
+
+    gameCtx.fillStyle = shadeGradient(rx, rw);
+    gameCtx.fillRect(rx, y, rw, RIM_H);
+
+    // Bright top bevel and dark bottom bevel give the collar thickness
+    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+    gameCtx.fillRect(rx + 2, y + 2, rw - 4, 3);
+    gameCtx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    gameCtx.fillRect(rx + 2, y + RIM_H - 5, rw - 4, 3);
+
+    // Specular streak, aligned with the shaft's
+    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    gameCtx.fillRect(rx + rw * 0.17, y, rw * 0.07, RIM_H);
+
+    gameCtx.strokeStyle = pal.outline;
+    gameCtx.lineWidth = 2;
+    gameCtx.strokeRect(rx + 1, y + 1, rw - 2, RIM_H - 2);
+  };
 
   gameCtx.save();
-  // Every fill style is set explicitly per shape. Previously the highlight colour
-  // set at the end of one iteration leaked into the next pipe's body fill, which
-  // drew that pipe almost invisibly (the "ghost pipe") until the pipe ahead of it
-  // was culled from the array.
+  // Every shape sets its own fill explicitly. A shared fill set once outside the
+  // loop was what previously produced the near-invisible "ghost pipe".
   pipes.forEach(pipe => {
     const bottomHeight = gameCanvas.height - pipe.bottomY - 80;
 
-    // Top pipe body
-    gameCtx.fillStyle = pipeBody;
-    gameCtx.fillRect(pipe.x, 0, pipeWidth, pipe.topHeight);
+    // Top pipe: shaft hangs from the ceiling, rim sits at its lower (open) end
+    drawShaft(pipe.x, 0, pipeWidth, pipe.topHeight - RIM_H);
+    drawRim(pipe.x, pipe.topHeight - RIM_H, pipeWidth);
 
-    // Top pipe shading down the right edge
-    gameCtx.fillStyle = pipeEdge;
-    gameCtx.fillRect(pipe.x + pipeWidth - 8, 0, 8, pipe.topHeight);
-
-    // Top pipe highlight
-    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-    gameCtx.fillRect(pipe.x + 6, 0, 10, pipe.topHeight);
-
-    // Bottom pipe body
-    gameCtx.fillStyle = pipeBody;
-    gameCtx.fillRect(pipe.x, pipe.bottomY, pipeWidth, bottomHeight);
-
-    // Bottom pipe shading down the right edge
-    gameCtx.fillStyle = pipeEdge;
-    gameCtx.fillRect(pipe.x + pipeWidth - 8, pipe.bottomY, 8, bottomHeight);
-
-    // Bottom pipe highlight
-    gameCtx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-    gameCtx.fillRect(pipe.x + 6, pipe.bottomY, 10, bottomHeight);
+    // Bottom pipe: rim at its upper (open) end, shaft runs down to the ground
+    drawRim(pipe.x, pipe.bottomY, pipeWidth);
+    drawShaft(pipe.x, pipe.bottomY + RIM_H, pipeWidth, bottomHeight - RIM_H);
   });
   gameCtx.restore();
 };
 
 // Draw Ground
 const drawGround = () => {
-  gameCtx.fillStyle = '#dcae5d';
-  gameCtx.fillRect(0, gameCanvas.height - 80, gameCanvas.width, 80);
+  const night = gameSettings.theme === 'night';
+  const top = gameCanvas.height - 80;
+
+  // The ground used a single daytime sand colour in both themes, which left a
+  // bright strip glowing under the night skyline.
+  const g = gameCtx.createLinearGradient(0, top, 0, gameCanvas.height);
+  if (night) {
+    g.addColorStop(0, '#6b5636');
+    g.addColorStop(1, '#4a3a24');
+  } else {
+    g.addColorStop(0, '#e8be6f');
+    g.addColorStop(1, '#cf9d4c');
+  }
+  gameCtx.fillStyle = g;
+  gameCtx.fillRect(0, top, gameCanvas.width, 80);
+
+  // Grass lip along the top edge
+  gameCtx.fillStyle = night ? '#2f5a2c' : '#5cbf3f';
+  gameCtx.fillRect(0, top, gameCanvas.width, 6);
+  gameCtx.fillStyle = night ? 'rgba(255,255,255,0.06)' : 'rgba(255, 255, 255, 0.25)';
+  gameCtx.fillRect(0, top, gameCanvas.width, 2);
 
   // Ground pattern
-  gameCtx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+  gameCtx.strokeStyle = night ? 'rgba(0, 0, 0, 0.22)' : 'rgba(0, 0, 0, 0.1)';
   gameCtx.lineWidth = 2;
   for (let i = 0; i < gameCanvas.width; i += 40) {
     gameCtx.beginPath();
-    gameCtx.moveTo(i, gameCanvas.height - 80);
-    gameCtx.lineTo(i + 20, gameCanvas.height - 60);
+    gameCtx.moveTo(i, top + 8);
+    gameCtx.lineTo(i + 20, top + 28);
     gameCtx.stroke();
   }
 };
@@ -679,39 +1241,32 @@ const hideGameOverModal = () => {
 };
 
 // Draw Home Screen
+//
+// Uses the same skyline renderer as the game so the two screens match, and so
+// the home screen picks up the night theme instead of always showing daytime.
 const drawHomescreen = () => {
-  const gradient = homeCtx.createLinearGradient(0, 0, 0, homeCanvas.height);
-  gradient.addColorStop(0, '#87ceeb');
-  gradient.addColorStop(1, '#e0f6ff');
-  homeCtx.fillStyle = gradient;
-  homeCtx.fillRect(0, 0, homeCanvas.width, homeCanvas.height);
+  const night = gameSettings.theme === 'night';
+  const GROUND = 100;
 
-  // Draw simple city on homescreen
-  const buildingWidth = 50;
-  const spacing = 70;
-  for (let i = 0; i < homeCanvas.width / spacing + 1; i++) {
-    const x = i * spacing;
-    const height = 100 + (Math.sin(i * 0.5) * 50);
-    const y = homeCanvas.height - height - 100;
-    
-    homeCtx.fillStyle = '#8b8b9a';
-    homeCtx.fillRect(x, y, buildingWidth, height);
-    homeCtx.strokeStyle = '#666';
-    homeCtx.lineWidth = 2;
-    homeCtx.strokeRect(x, y, buildingWidth, height);
-
-    // Windows
-    for (let row = 0; row < Math.floor(height / 14) - 1; row++) {
-      for (let col = 0; col < 2; col++) {
-        homeCtx.fillStyle = '#d0d0d0';
-        homeCtx.fillRect(x + 8 + col * 14, y + 12 + row * 14, 8, 8);
-      }
-    }
-  }
+  drawSkyline(homeCtx, homeCanvas.width, homeCanvas.height, GROUND, night, 0);
 
   // Ground
-  homeCtx.fillStyle = '#dcae5d';
-  homeCtx.fillRect(0, homeCanvas.height - 100, homeCanvas.width, 100);
+  const top = homeCanvas.height - GROUND;
+  const g = homeCtx.createLinearGradient(0, top, 0, homeCanvas.height);
+  if (night) {
+    g.addColorStop(0, '#6b5636');
+    g.addColorStop(1, '#4a3a24');
+  } else {
+    g.addColorStop(0, '#e8be6f');
+    g.addColorStop(1, '#cf9d4c');
+  }
+  homeCtx.fillStyle = g;
+  homeCtx.fillRect(0, top, homeCanvas.width, GROUND);
+
+  homeCtx.fillStyle = night ? '#2f5a2c' : '#5cbf3f';
+  homeCtx.fillRect(0, top, homeCanvas.width, 6);
+  homeCtx.fillStyle = night ? 'rgba(255,255,255,0.06)' : 'rgba(255, 255, 255, 0.25)';
+  homeCtx.fillRect(0, top, homeCanvas.width, 2);
 };
 
 // Animation Loop
