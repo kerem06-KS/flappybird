@@ -25,21 +25,61 @@ let score = 0;
 let pipes = [];
 let frameCount = 0;
 let wingAngle = 0;
-const flapSound = new Howl({
-  src: ['assets/sounds/flap_sound.mp3'],
-  volume: 0.6
-});
-
 // Game Settings with theme and per-difficulty scores
 const gameSettings = {
   difficulty: 'normal',
   theme: 'day',
   birdColor: 'yellow-solid'
 };
-const scoreSound = new Howl({
-  src: ['assets/sounds/score_sound.mp3'],
-  volume: 0.6
-});
+
+// ===========================================================================
+// AUDIO
+//
+// Every Howl in the game is defined here so there is one place to look when
+// adding or swapping a sound. Sound effects are one-shots; music tracks loop
+// and are managed by the music controller further down.
+// ===========================================================================
+
+const SFX = {
+  flap: new Howl({
+    src: ['assets/sounds/flap_sound.mp3'],
+    volume: 0.6
+  }),
+  score: new Howl({
+    src: ['assets/sounds/score_sound.mp3'],
+    volume: 0.6
+  }),
+  // Impact when the bird hits a pipe or the ground
+  collision: new Howl({
+    src: ['assets/sounds/collision.mp3'],
+    volume: 0.7
+  }),
+  // Descending minor phrase as the run ends
+  gameOver: new Howl({
+    src: ['assets/sounds/game_over.mp3'],
+    volume: 0.55
+  }),
+  // Whoosh and pop as the score card appears
+  scoreCard: new Howl({
+    src: ['assets/sounds/score_card.mp3'],
+    volume: 0.5
+  }),
+  // Short tick for any button or menu interaction
+  uiClick: new Howl({
+    src: ['assets/sounds/ui_click.mp3'],
+    volume: 0.45
+  })
+};
+
+// Play a one-shot sound effect.
+const playSfx = (name) => {
+  const sound = SFX[name];
+  if (sound) sound.play();
+};
+
+// Backwards-compatible aliases for the original two sounds.
+const flapSound = SFX.flap;
+const scoreSound = SFX.score;
 // Flight feel is tuned per difficulty:
 //  - flapPower:    how much lift one tap gives (smaller = gentler, more controlled hops)
 //  - gravity:      how hard the bird is pulled down
@@ -60,7 +100,7 @@ const difficultySettings = {
 // Single entry point for flapping so keyboard, mouse and touch all feel identical.
 const flap = () => {
   velocity = flapPower;
-  flapSound.play();
+  playSfx('flap');
 };
 
 // Per-difficulty highscores
@@ -1150,7 +1190,7 @@ const updateGame = () => {
    if (!pipe.scored && pipe.x + pipeWidth < birdX) {
   pipe.scored = true;
   score++;
-  scoreSound.play();
+  playSfx('score');
 }
     
     return pipe.x + pipeWidth > 0;
@@ -1208,9 +1248,14 @@ const endGame = () => {
   // guard the game-over modal and confetti could fire twice.
   if (gameState !== 'playing') return;
   gameState = 'gameOver';
+
+  // Impact first, then the game-over phrase once the hit has registered.
+  playSfx('collision');
+  setTimeout(() => playSfx('gameOver'), 260);
+
   const currentHighScore = getHighScore(gameSettings.difficulty);
   const isNewHighScore = score > currentHighScore;
-  
+
   if (isNewHighScore) {
     setHighScore(gameSettings.difficulty, score);
     createConfetti();
@@ -1236,7 +1281,10 @@ const showGameOverModal = (isNewHighScore) => {
 
   document.getElementById('gameOverModal').classList.remove('hidden');
   document.getElementById('modalOverlay').classList.remove('hidden');
-  
+
+  // Whoosh and pop timed to the card appearing on screen
+  playSfx('scoreCard');
+
   if (isNewHighScore) {
     confettiCanvas.style.display = 'block';
   }
@@ -1328,6 +1376,16 @@ const updateHUD = () => {
 };
 
 // Event Listeners
+
+// One delegated listener gives every button a click tick, including any button
+// added later, instead of repeating a play call inside each handler. Radio
+// controls are handled by their own change events below: a label-wrapped radio
+// fires click twice (once for the label, once for the synthesised input click),
+// which would double up the sound.
+document.addEventListener('click', (e) => {
+  if (e.target.closest('button')) playSfx('uiClick');
+});
+
 document.getElementById('playBtn').addEventListener('click', () => {
   showGamescreen();
 });
@@ -1362,6 +1420,7 @@ document.getElementById('homeBtn').addEventListener('click', () => {
 document.querySelectorAll('input[name="difficulty"]').forEach(input => {
   input.addEventListener('change', (e) => {
     gameSettings.difficulty = e.target.value;
+    playSfx('uiClick');
     updateHUD();
   });
 });
@@ -1369,6 +1428,7 @@ document.querySelectorAll('input[name="difficulty"]').forEach(input => {
 document.querySelectorAll('input[name="theme"]').forEach(input => {
   input.addEventListener('change', (e) => {
     setTheme(e.target.value);
+    playSfx('uiClick');
     drawHomescreen();
   });
 });
@@ -1376,6 +1436,7 @@ document.querySelectorAll('input[name="theme"]').forEach(input => {
 document.querySelectorAll('input[name="birdColor"]').forEach(input => {
   input.addEventListener('change', (e) => {
     gameSettings.birdColor = e.target.value;
+    playSfx('uiClick');
   });
 });
 
@@ -1405,6 +1466,7 @@ gameCanvas.addEventListener('pointerdown', (e) => {
 
 homeCanvas.addEventListener('click', () => {
   if (gameState === 'home') {
+    playSfx('uiClick');
     showSettingsModal();
   }
 });
