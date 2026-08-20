@@ -29,7 +29,8 @@ let wingAngle = 0;
 const gameSettings = {
   difficulty: 'normal',
   theme: 'day',
-  birdColor: 'yellow-solid'
+  birdColor: 'yellow-solid',
+  birdSpecies: 'songbird'
 };
 
 // ===========================================================================
@@ -304,14 +305,16 @@ const loadSettings = () => {
     const settings = JSON.parse(saved);
     gameSettings.difficulty = settings.difficulty || 'normal';
     gameSettings.birdColor = settings.birdColor || 'yellow-solid';
+    gameSettings.birdSpecies = settings.birdSpecies || 'songbird';
   }
-  
+
   // Load theme
   initTheme();
-  
+
   // Update UI
   document.querySelector(`input[name="difficulty"][value="${gameSettings.difficulty}"]`).checked = true;
   document.querySelector(`input[name="birdColor"][value="${gameSettings.birdColor}"]`).checked = true;
+  document.querySelector(`input[name="birdSpecies"][value="${gameSettings.birdSpecies}"]`).checked = true;
 
   // Reflect the stored audio preferences in the toggles
   const musicToggle = document.getElementById('musicToggle');
@@ -323,7 +326,8 @@ const loadSettings = () => {
 const saveSettings = () => {
   localStorage.setItem('flappyBirdSettings', JSON.stringify({
     difficulty: gameSettings.difficulty,
-    birdColor: gameSettings.birdColor
+    birdColor: gameSettings.birdColor,
+    birdSpecies: gameSettings.birdSpecies
   }));
 };
 
@@ -929,7 +933,7 @@ const drawBirdWithPattern = () => {
   gameCtx.restore();
 };
 
-// Draw Owl (for night mode)
+// Draw Owl (selected via the Bird Species setting)
 const drawOwl = () => {
   gameCtx.save();
   gameCtx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
@@ -1347,7 +1351,7 @@ const drawGame = () => {
   drawPipes();
   drawGround();
   
-  if (gameSettings.theme === 'night') {
+  if (gameSettings.birdSpecies === 'owl') {
     drawOwl();
   } else {
     drawBirdWithPattern();
@@ -1566,6 +1570,13 @@ document.querySelectorAll('input[name="theme"]').forEach(input => {
 document.querySelectorAll('input[name="birdColor"]').forEach(input => {
   input.addEventListener('change', (e) => {
     gameSettings.birdColor = e.target.value;
+    playSfx('uiClick');
+  });
+});
+
+document.querySelectorAll('input[name="birdSpecies"]').forEach(input => {
+  input.addEventListener('change', (e) => {
+    gameSettings.birdSpecies = e.target.value;
     playSfx('uiClick');
   });
 });
