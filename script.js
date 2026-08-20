@@ -730,6 +730,83 @@ const drawOwlWing = (p, beat, near) => {
   gameCtx.restore();
 };
 
+// Woodpecker wing: black primaries barred with white spots (a real
+// ladder-back pattern), with a covert tinted from the chosen colour so the
+// palette picker still shows up somewhere even though the flight feathers
+// themselves are fixed black.
+const drawWoodpeckerWing = (p, beat, near) => {
+  gameCtx.save();
+  gameCtx.translate(13, 17);
+  gameCtx.rotate(beat * (near ? 0.5 : 0.36));
+  if (!near) gameCtx.scale(0.88, 0.88);
+
+  gameCtx.fillStyle = near ? '#1c1c1c' : '#0f0f0f';
+  primaryFeather(0.05, 15, 3.6);
+  primaryFeather(0.40, 14, 3.8);
+  primaryFeather(0.74, 12, 3.4);
+
+  // White spots across the primaries
+  gameCtx.fillStyle = 'rgba(255,255,255,0.85)';
+  [[-6, -1], [-10, 1.5], [-13, 4.5]].forEach(([dx, dy]) => {
+    gameCtx.beginPath();
+    gameCtx.ellipse(dx, dy, 1.6, 1, 0.3, 0, Math.PI * 2);
+    gameCtx.fill();
+  });
+
+  gameCtx.fillStyle = near ? p.dark : p.darker;
+  gameCtx.beginPath();
+  gameCtx.ellipse(-3, 1.5, 7.4, 5.2, 0.26, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  gameCtx.restore();
+};
+
+// Toucan wing: compact and fixed black like the body, with just a whisper of
+// the chosen hue on the covert so it doesn't look completely disconnected
+// from the throat patch.
+const drawToucanWing = (p, beat, near) => {
+  gameCtx.save();
+  gameCtx.translate(11, 19);
+  gameCtx.rotate(beat * (near ? 0.46 : 0.34));
+  if (!near) gameCtx.scale(0.86, 0.86);
+
+  gameCtx.fillStyle = near ? '#161616' : '#0a0a0a';
+  primaryFeather(0.0, 13, 4.0);
+  primaryFeather(0.34, 12.5, 4.2);
+  primaryFeather(0.66, 11, 3.8);
+
+  gameCtx.fillStyle = near ? p.darker : '#050505';
+  gameCtx.beginPath();
+  gameCtx.ellipse(-2.5, 1, 6.6, 4.8, 0.24, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  gameCtx.restore();
+};
+
+// Penguin flipper: a smooth solid paddle, not individual feathers — real
+// penguin flippers have no visible plumage, so reusing primaryFeather here
+// would read as wrong rather than just simpler.
+const drawPenguinFlipper = (p, beat, near) => {
+  gameCtx.save();
+  gameCtx.translate(11, 19);
+  gameCtx.rotate(0.35 + beat * (near ? 0.5 : 0.36));
+  if (!near) gameCtx.scale(0.85, 0.85);
+
+  const flipperGrad = gameCtx.createLinearGradient(0, -3, -15, 3);
+  flipperGrad.addColorStop(0, near ? p.base : p.dark);
+  flipperGrad.addColorStop(1, near ? p.darker : '#0a0a0a');
+  gameCtx.fillStyle = flipperGrad;
+  gameCtx.beginPath();
+  gameCtx.moveTo(1, -3.5);
+  gameCtx.quadraticCurveTo(-11, -5, -16, 0);
+  gameCtx.quadraticCurveTo(-11, 4.5, 1, 3.5);
+  gameCtx.quadraticCurveTo(3, 0, 1, -3.5);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  gameCtx.restore();
+};
+
 // ---------------------------------------------------------------------------
 // Colour pattern overlays
 //
@@ -779,6 +856,65 @@ const applyOwlPattern = (p, pattern) => {
     gameCtx.stroke();
   }
   gameCtx.globalAlpha = 1;
+  gameCtx.restore();
+};
+
+// Extra ladder-back barring across the woodpecker's chest, on top of the
+// wings' fixed barring, so "stripe" still does something visible there too.
+const applyWoodpeckerPattern = (p, pattern) => {
+  if (pattern !== 'stripe') return;
+  gameCtx.save();
+  gameCtx.beginPath();
+  gameCtx.moveTo(10, 33);
+  gameCtx.bezierCurveTo(4, 28, 4, 14, 12, 7);
+  gameCtx.bezierCurveTo(18, 3, 26, 5, 28, 11);
+  gameCtx.bezierCurveTo(30, 16, 29, 24, 25, 30);
+  gameCtx.bezierCurveTo(20, 34, 13, 35, 10, 33);
+  gameCtx.closePath();
+  gameCtx.clip();
+
+  gameCtx.strokeStyle = p.darker;
+  gameCtx.globalAlpha = 0.6;
+  gameCtx.lineWidth = 1.8;
+  for (let y = 12; y < 32; y += 4) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(6, y);
+    gameCtx.lineTo(28, y);
+    gameCtx.stroke();
+  }
+  gameCtx.globalAlpha = 1;
+  gameCtx.restore();
+};
+
+// A soft diagonal band across the throat patch, echoing the songbird's
+// striping so the same setting reads consistently across species.
+const applyToucanPattern = (p, pattern, bib) => {
+  if (pattern !== 'stripe') return;
+  gameCtx.save();
+  bib();
+  gameCtx.clip();
+  gameCtx.fillStyle = p.darker;
+  gameCtx.globalAlpha = 0.5;
+  gameCtx.beginPath();
+  gameCtx.moveTo(6, 20);
+  gameCtx.lineTo(11, 20);
+  gameCtx.lineTo(6, 32);
+  gameCtx.lineTo(1, 32);
+  gameCtx.closePath();
+  gameCtx.fill();
+  gameCtx.globalAlpha = 1;
+  gameCtx.restore();
+};
+
+// A king-penguin-style bright chest patch instead of the plain white bib.
+// Sits below where the head will be drawn on top, or it would get covered.
+const applyPenguinPattern = (p, pattern) => {
+  if (pattern !== 'stripe') return;
+  gameCtx.save();
+  gameCtx.fillStyle = p.base;
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 23, 4.6, 5, 0, 0, Math.PI * 2);
+  gameCtx.fill();
   gameCtx.restore();
 };
 
@@ -1116,6 +1252,366 @@ const drawOwl = () => {
   gameCtx.restore();
 };
 
+// Draw Woodpecker (selected via the Bird Species setting)
+const drawWoodpecker = () => {
+  gameCtx.save();
+  gameCtx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
+
+  const angle = Math.max(-0.45, Math.min(velocity * 0.08, 0.5));
+  gameCtx.rotate(angle);
+  gameCtx.translate(-birdWidth / 2, -birdHeight / 2);
+
+  const [color, pattern] = gameSettings.birdColor.split('-');
+  const p = birdPalette(color);
+  const beat = wingBeat();
+  wingAngle = beat * 0.3;
+
+  const bodyPath = () => {
+    gameCtx.beginPath();
+    gameCtx.moveTo(10, 33);
+    gameCtx.bezierCurveTo(4, 28, 4, 14, 12, 7);
+    gameCtx.bezierCurveTo(18, 3, 26, 5, 28, 11);
+    gameCtx.bezierCurveTo(30, 16, 29, 24, 25, 30);
+    gameCtx.bezierCurveTo(20, 34, 13, 35, 10, 33);
+    gameCtx.closePath();
+  };
+
+  // --- stiff prop tail, braced against a trunk that isn't drawn ---
+  gameCtx.fillStyle = '#232323';
+  gameCtx.beginPath();
+  gameCtx.moveTo(11, 27);
+  gameCtx.lineTo(1, 35);
+  gameCtx.lineTo(5, 36);
+  gameCtx.lineTo(13, 30);
+  gameCtx.closePath();
+  gameCtx.fill();
+  gameCtx.strokeStyle = 'rgba(255,255,255,0.18)';
+  gameCtx.lineWidth = 0.8;
+  for (let i = 0; i < 3; i++) {
+    gameCtx.beginPath();
+    gameCtx.moveTo(9 - i * 2.4, 29 + i * 1.5);
+    gameCtx.lineTo(4 - i * 2.4, 34.5 + i * 1.5);
+    gameCtx.stroke();
+  }
+
+  // --- far wing ---
+  drawWoodpeckerWing(p, -beat, false);
+
+  // --- body ---
+  const bodyGrad = gameCtx.createLinearGradient(4, 3, 4, 35);
+  bodyGrad.addColorStop(0, p.light);
+  bodyGrad.addColorStop(0.55, p.base);
+  bodyGrad.addColorStop(1, p.dark);
+  gameCtx.fillStyle = bodyGrad;
+  bodyPath();
+  gameCtx.fill();
+
+  // Belly
+  gameCtx.fillStyle = p.lighter;
+  gameCtx.beginPath();
+  gameCtx.ellipse(17, 24, 7.5, 8.5, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  applyWoodpeckerPattern(p, pattern);
+
+  // --- head ---
+  const headGrad = gameCtx.createRadialGradient(23, 8, 1, 24, 11, 9);
+  headGrad.addColorStop(0, p.light);
+  headGrad.addColorStop(1, p.base);
+  gameCtx.fillStyle = headGrad;
+  gameCtx.beginPath();
+  gameCtx.arc(24, 11, 7.6, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // White cheek patch, cut off by a black malar stripe running to the beak —
+  // the marking that reads as "woodpecker" even at a glance.
+  gameCtx.fillStyle = '#f5f0e4';
+  gameCtx.beginPath();
+  gameCtx.ellipse(23.5, 15, 5.4, 3.6, 0.1, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.strokeStyle = '#1c1c1c';
+  gameCtx.lineWidth = 1.6;
+  gameCtx.lineCap = 'round';
+  gameCtx.beginPath();
+  gameCtx.moveTo(19.5, 13.5);
+  gameCtx.quadraticCurveTo(25, 15.5, 29.5, 13.8);
+  gameCtx.stroke();
+
+  // --- crest: a fixed spiky red tuft, the species' signature and not
+  // recoloured by the palette picker (same convention as the owl's beak) ---
+  gameCtx.fillStyle = '#e0332a';
+  gameCtx.beginPath();
+  gameCtx.moveTo(17.5, 5.5);
+  gameCtx.lineTo(19, -3);
+  gameCtx.lineTo(21.5, 5);
+  gameCtx.lineTo(23.5, -4.5);
+  gameCtx.lineTo(26.5, 4.5);
+  gameCtx.lineTo(28.5, -1.5);
+  gameCtx.lineTo(29.5, 6.5);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  // --- eye: small, dark, alert ---
+  gameCtx.fillStyle = '#1a1108';
+  gameCtx.beginPath();
+  gameCtx.arc(26.5, 10.5, 2.3, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.fillStyle = 'rgba(255,255,255,0.9)';
+  gameCtx.beginPath();
+  gameCtx.arc(27.3, 9.7, 0.8, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // --- long straight chisel beak ---
+  const beakGrad = gameCtx.createLinearGradient(29, 10, 40, 13);
+  beakGrad.addColorStop(0, '#4a4642');
+  beakGrad.addColorStop(1, '#232120');
+  gameCtx.fillStyle = beakGrad;
+  gameCtx.beginPath();
+  gameCtx.moveTo(29, 9.5);
+  gameCtx.lineTo(40, 11.4);
+  gameCtx.lineTo(40, 12.6);
+  gameCtx.lineTo(29, 13.6);
+  gameCtx.closePath();
+  gameCtx.fill();
+  gameCtx.strokeStyle = 'rgba(0,0,0,0.3)';
+  gameCtx.lineWidth = 0.6;
+  gameCtx.beginPath();
+  gameCtx.moveTo(30, 11.5);
+  gameCtx.lineTo(39, 12);
+  gameCtx.stroke();
+
+  // --- near wing on top ---
+  drawWoodpeckerWing(p, beat, true);
+
+  gameCtx.restore();
+};
+
+// Draw Toucan (selected via the Bird Species setting)
+const drawToucan = () => {
+  gameCtx.save();
+  gameCtx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
+
+  const angle = Math.max(-0.45, Math.min(velocity * 0.08, 0.5));
+  gameCtx.rotate(angle);
+  gameCtx.translate(-birdWidth / 2, -birdHeight / 2);
+
+  const [color, pattern] = gameSettings.birdColor.split('-');
+  const p = birdPalette(color);
+  const beat = wingBeat();
+  wingAngle = beat * 0.3;
+
+  // The bright throat bib is the one part of a toucan that varies by real
+  // species (yellow, white, orange...), so that's what the colour picker
+  // drives here — everything else stays black, same as the real bird.
+  const bibPath = () => {
+    gameCtx.beginPath();
+    gameCtx.ellipse(14, 17, 6.2, 8, -0.15, 0, Math.PI * 2);
+  };
+
+  // --- stubby tail ---
+  gameCtx.fillStyle = '#0d0d0d';
+  gameCtx.beginPath();
+  gameCtx.moveTo(8, 24);
+  gameCtx.lineTo(-1, 27);
+  gameCtx.lineTo(0, 31);
+  gameCtx.lineTo(9, 29);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  // --- far wing ---
+  drawToucanWing(p, -beat, false);
+
+  // --- body: compact and fixed black, like the real bird ---
+  const bodyGrad = gameCtx.createLinearGradient(4, 8, 4, 32);
+  bodyGrad.addColorStop(0, '#2a2a2a');
+  bodyGrad.addColorStop(0.6, '#111111');
+  bodyGrad.addColorStop(1, '#050505');
+  gameCtx.fillStyle = bodyGrad;
+  gameCtx.beginPath();
+  gameCtx.ellipse(15, 20, 10.5, 10.5, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // --- throat bib, coloured by the palette ---
+  const bibGrad = gameCtx.createLinearGradient(8, 9, 8, 25);
+  bibGrad.addColorStop(0, p.lighter);
+  bibGrad.addColorStop(1, p.base);
+  gameCtx.fillStyle = bibGrad;
+  bibPath();
+  gameCtx.fill();
+
+  applyToucanPattern(p, pattern, bibPath);
+
+  // --- head: small, black, sits high on the body ---
+  gameCtx.fillStyle = '#151515';
+  gameCtx.beginPath();
+  gameCtx.arc(19, 11, 6.6, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // --- eye: bright ring, a real toucan field mark ---
+  gameCtx.fillStyle = p.light;
+  gameCtx.beginPath();
+  gameCtx.arc(20.5, 10, 2.9, 0, Math.PI * 2);
+  gameCtx.fill();
+  const look = Math.sin(frameCount * 0.05) * 0.5;
+  gameCtx.fillStyle = '#0a0a0a';
+  gameCtx.beginPath();
+  gameCtx.arc(20.9 + look, 10, 1.5, 0, Math.PI * 2);
+  gameCtx.fill();
+  gameCtx.fillStyle = '#ffffff';
+  gameCtx.beginPath();
+  gameCtx.arc(20.3 + look, 9.2, 0.55, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // --- the huge curved beak: the species' fixed signature, so it always
+  // shows the same cheerful two-tone regardless of the chosen colour ---
+  const beakGrad = gameCtx.createLinearGradient(24, 4, 42, 18);
+  beakGrad.addColorStop(0, '#f7c948');
+  beakGrad.addColorStop(0.55, '#f5941f');
+  beakGrad.addColorStop(1, '#e3491f');
+  gameCtx.fillStyle = beakGrad;
+  gameCtx.beginPath();
+  gameCtx.moveTo(24, 8);
+  gameCtx.quadraticCurveTo(38, 4, 43, 13);
+  gameCtx.quadraticCurveTo(37, 15.5, 30, 15.5);
+  gameCtx.quadraticCurveTo(25, 14.5, 24, 8);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  // Lower mandible, kept darker so the beak reads as two parts
+  gameCtx.fillStyle = '#c8410f';
+  gameCtx.beginPath();
+  gameCtx.moveTo(25, 15.4);
+  gameCtx.quadraticCurveTo(33, 17.2, 41, 14.5);
+  gameCtx.quadraticCurveTo(35, 20, 26, 18.4);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  // Culmen ridge line along the top of the beak
+  gameCtx.strokeStyle = 'rgba(0,0,0,0.25)';
+  gameCtx.lineWidth = 0.8;
+  gameCtx.beginPath();
+  gameCtx.moveTo(26, 8.5);
+  gameCtx.quadraticCurveTo(37, 6, 42, 12.5);
+  gameCtx.stroke();
+
+  // Black base ring where the beak meets the face
+  gameCtx.strokeStyle = '#0d0d0d';
+  gameCtx.lineWidth = 2;
+  gameCtx.beginPath();
+  gameCtx.arc(23.5, 11.5, 5, -0.3, 1.7);
+  gameCtx.stroke();
+
+  // --- near wing on top ---
+  drawToucanWing(p, beat, true);
+
+  gameCtx.restore();
+};
+
+// Draw Penguin (selected via the Bird Species setting)
+const drawPenguin = () => {
+  gameCtx.save();
+  gameCtx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
+
+  const angle = Math.max(-0.45, Math.min(velocity * 0.08, 0.5));
+  gameCtx.rotate(angle);
+  gameCtx.translate(-birdWidth / 2, -birdHeight / 2);
+
+  const [color, pattern] = gameSettings.birdColor.split('-');
+  // Tuxedo plumage wears a darkened version of the chosen hue, the same
+  // treatment the owl gets, so the picker still matters without fighting
+  // the black-and-white identity.
+  const p = {
+    base:    mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#12131a', 0.55),
+    light:   mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#dfe6f2', 0.28),
+    lighter: mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#eef2fa', 0.55),
+    dark:    mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#08090c', 0.72),
+    darker:  mixHex(BIRD_BASES[color] || BIRD_BASES.yellow, '#040405', 0.85)
+  };
+  const beat = wingBeat();
+  wingAngle = beat * 0.3;
+
+  // --- webbed feet, peeking out beneath the belly ---
+  gameCtx.fillStyle = '#e8a33c';
+  [[12, 33], [20, 33]].forEach(([fx, fy]) => {
+    gameCtx.beginPath();
+    gameCtx.moveTo(fx - 2.5, fy);
+    gameCtx.lineTo(fx, fy + 3);
+    gameCtx.lineTo(fx + 2.5, fy);
+    gameCtx.closePath();
+    gameCtx.fill();
+  });
+
+  // --- far flipper ---
+  drawPenguinFlipper(p, -beat, false);
+
+  // --- body: tall standing oval ---
+  const bodyGrad = gameCtx.createLinearGradient(6, 4, 6, 34);
+  bodyGrad.addColorStop(0, p.light);
+  bodyGrad.addColorStop(0.55, p.base);
+  bodyGrad.addColorStop(1, p.dark);
+  gameCtx.fillStyle = bodyGrad;
+  gameCtx.beginPath();
+  gameCtx.ellipse(17, 19, 10.5, 14.5, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // --- white tuxedo belly, reaching up to the chin ---
+  gameCtx.fillStyle = '#f7f8fb';
+  gameCtx.beginPath();
+  gameCtx.ellipse(18, 20, 6.8, 12, 0, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  applyPenguinPattern(p, pattern);
+
+  // --- head ---
+  const headGrad = gameCtx.createRadialGradient(15, 6, 1, 16, 9, 8);
+  headGrad.addColorStop(0, p.light);
+  headGrad.addColorStop(1, p.base);
+  gameCtx.fillStyle = headGrad;
+  gameCtx.beginPath();
+  gameCtx.arc(16, 10, 7, 0, Math.PI * 2);
+  gameCtx.fill();
+
+  // --- eyes: simple, round, plush-toy dark eyes with a blink ---
+  const blink = ((frameCount + 60) % 210) < 5;
+  gameCtx.fillStyle = blink ? p.base : '#111111';
+  gameCtx.beginPath();
+  gameCtx.arc(19, 9, blink ? 0.6 : 2, 0, Math.PI * 2);
+  gameCtx.fill();
+  if (!blink) {
+    gameCtx.fillStyle = 'rgba(255,255,255,0.9)';
+    gameCtx.beginPath();
+    gameCtx.arc(19.7, 8.3, 0.7, 0, Math.PI * 2);
+    gameCtx.fill();
+  }
+
+  // --- short orange wedge beak ---
+  const beakGrad = gameCtx.createLinearGradient(21, 8, 30, 12);
+  beakGrad.addColorStop(0, '#ffb84d');
+  beakGrad.addColorStop(1, '#e8760c');
+  gameCtx.fillStyle = beakGrad;
+  gameCtx.beginPath();
+  gameCtx.moveTo(21, 8.6);
+  gameCtx.lineTo(29, 10.2);
+  gameCtx.lineTo(21, 12.2);
+  gameCtx.closePath();
+  gameCtx.fill();
+
+  // --- near flipper on top ---
+  drawPenguinFlipper(p, beat, true);
+
+  gameCtx.restore();
+};
+
+// Every playable species, keyed by the value used in the Bird Species
+// setting and the birdSpecies-<label> localStorage record.
+const BIRD_SPECIES = {
+  songbird: drawBirdWithPattern,
+  owl: drawOwl,
+  woodpecker: drawWoodpecker,
+  toucan: drawToucan,
+  penguin: drawPenguin
+};
+
 // Draw Pipes
 const drawPipes = () => {
   const night = gameSettings.theme === 'night';
@@ -1351,11 +1847,7 @@ const drawGame = () => {
   drawPipes();
   drawGround();
   
-  if (gameSettings.birdSpecies === 'owl') {
-    drawOwl();
-  } else {
-    drawBirdWithPattern();
-  }
+  (BIRD_SPECIES[gameSettings.birdSpecies] || drawBirdWithPattern)();
 
   // HUD
   gameCtx.fillStyle = '#fff';
